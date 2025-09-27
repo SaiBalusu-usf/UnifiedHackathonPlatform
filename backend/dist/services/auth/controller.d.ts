@@ -1,0 +1,22 @@
+import { Request, Response } from 'express';
+import { AuthenticatedRequest } from '../../shared/middleware/auth';
+export declare const register: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const login: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const logout: (req: AuthenticatedRequest, res: Response) => Promise<void>;
+export declare const refreshToken: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const verifyEmail: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const requestPasswordReset: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const resetPassword: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const getProfile: (req: AuthenticatedRequest, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const updateProfile: (req: AuthenticatedRequest, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const changePassword: (req: AuthenticatedRequest, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const enable2FA: (req: AuthenticatedRequest, res: Response) => Promise<void>;
+export declare const disable2FA: (req: AuthenticatedRequest, res: Response) => Promise<void>;
+export declare const verify2FA: (req: AuthenticatedRequest, res: Response) => Promise<void>;
+export declare const googleAuth: (req: Request, res: Response) => Promise<void>;
+export declare const googleCallback: (req: Request, res: Response) => Promise<void>;
+export declare const githubAuth: (req: Request, res: Response) => Promise<void>;
+export declare const githubCallback: (req: Request, res: Response) => Promise<void>;
+export declare const linkedinAuth: (req: Request, res: Response) => Promise<void>;
+export declare const linkedinCallback: (req: Request, res: Response) => Promise<void>;
+//# sourceMappingURL=controller.d.ts.map

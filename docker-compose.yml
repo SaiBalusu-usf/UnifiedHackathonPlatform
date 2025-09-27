@@ -1,0 +1,464 @@
+version: '3.8'
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: unified-hackathon-postgres
+    environment:
+      POSTGRES_DB: unified-hackathon_dev
+      POSTGRES_USER: unified-hackathon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-unified-hackathon123}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/src/config/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unified-hackathon -d unified-hackathon_dev"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mongodb:
+    image: mongo:6-alpine
+    container_name: unified-hackathon-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: unified-hackathon
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-unified-hackathon123}
+      MONGO_INITDB_DATABASE: unified-hackathon_dev
+    volumes:
+      - mongodb_data:/data/db
+      - ./backend/src/config/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    ports:
+      - "27017:27017"
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: unified-hackathon-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-unified-hackathon123} --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend Services
+  auth-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: unified-hackathon-auth-service
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://unified-hackathon:${POSTGRES_PASSWORD:-unified-hackathon123}@postgres:5432/unified-hackathon_dev
+      - MONGODB_URI=mongodb://unified-hackathon:${MONGO_PASSWORD:-unified-hackathon123}@mongodb:27017/unified-hackathon_dev?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-unified-hackathon123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-your-refresh-secret-key}
+      - PORT=3001
+      - SERVICE_NAME=auth-service
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: npm run dev:auth
+
+  user-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: unified-hackathon-user-service
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://unified-hackathon:${POSTGRES_PASSWORD:-unified-hackathon123}@postgres:5432/unified-hackathon_dev
+      - MONGODB_URI=mongodb://unified-hackathon:${MONGO_PASSWORD:-unified-hackathon123}@mongodb:27017/unified-hackathon_dev?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-unified-hackathon123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - PORT=3002
+      - SERVICE_NAME=user-service
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: npm run dev:user
+
+  team-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: unified-hackathon-team-service
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://unified-hackathon:${POSTGRES_PASSWORD:-unified-hackathon123}@postgres:5432/unified-hackathon_dev
+      - MONGODB_URI=mongodb://unified-hackathon:${MONGO_PASSWORD:-unified-hackathon123}@mongodb:27017/unified-hackathon_dev?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-unified-hackathon123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - PORT=3003
+      - SERVICE_NAME=team-service
+    ports:
+      - "3003:3003"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: npm run dev:team
+
+  resume-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: unified-hackathon-resume-service
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://unified-hackathon:${POSTGRES_PASSWORD:-unified-hackathon123}@postgres:5432/unified-hackathon_dev
+      - MONGODB_URI=mongodb://unified-hackathon:${MONGO_PASSWORD:-unified-hackathon123}@mongodb:27017/unified-hackathon_dev?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-unified-hackathon123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - PORT=3004
+      - SERVICE_NAME=resume-service
+    ports:
+      - "3004:3004"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - resume_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: npm run dev:resume
+
+  tracking-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: unified-hackathon-tracking-service
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://unified-hackathon:${POSTGRES_PASSWORD:-unified-hackathon123}@postgres:5432/unified-hackathon_dev
+      - MONGODB_URI=mongodb://unified-hackathon:${MONGO_PASSWORD:-unified-hackathon123}@mongodb:27017/unified-hackathon_dev?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-unified-hackathon123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - PORT=3005
+      - SERVICE_NAME=tracking-service
+    ports:
+      - "3005:3005"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: npm run dev:tracking
+
+  # WebSocket Server
+  websocket-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: unified-hackathon-websocket
+    environment:
+      - NODE_ENV=development
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-unified-hackathon123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - PORT=3000
+      - SERVICE_NAME=websocket-server
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: npm run dev:websocket
+
+  # AI Agent Manager
+  agent-manager:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: unified-hackathon-agents
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://unified-hackathon:${POSTGRES_PASSWORD:-unified-hackathon123}@postgres:5432/unified-hackathon_dev
+      - MONGODB_URI=mongodb://unified-hackathon:${MONGO_PASSWORD:-unified-hackathon123}@mongodb:27017/unified-hackathon_dev?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-unified-hackathon123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - SERVICE_NAME=agent-manager
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    command: npm run dev:agents
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: unified-hackathon-frontend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:3001
+      - VITE_WEBSOCKET_URL=ws://localhost:3000
+      - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - VITE_GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - auth-service
+      - user-service
+      - team-service
+      - websocket-server
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+    command: npm run dev
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: unified-hackathon-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - auth-service
+      - user-service
+      - team-service
+      - resume-service
+      - tracking-service
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+
+  # Monitoring Services
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: unified-hackathon-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: unified-hackathon-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+
+  # Logging Services
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: unified-hackathon-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: unified-hackathon-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: unified-hackathon-logstash
+    volumes:
+      - ./logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    ports:
+      - "5044:5044"
+    depends_on:
+      - elasticsearch
+    networks:
+      - unified-hackathon-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+  resume_uploads:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+
+networks:
+  unified-hackathon-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+

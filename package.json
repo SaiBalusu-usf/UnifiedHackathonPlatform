@@ -1,0 +1,130 @@
+{
+  "name": "unified-hackathon-platform",
+  "version": "1.0.0",
+  "description": "A comprehensive hackathon web platform featuring AI-powered team formation, real-time tracking, and intelligent resume analysis",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:websocket\" \"npm run dev:agents\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:websocket": "cd backend && npm run dev:websocket",
+    "dev:agents": "cd backend && npm run dev:agents",
+    "dev:auth": "cd backend && npm run dev:auth",
+    "dev:user": "cd backend && npm run dev:user",
+    "dev:team": "cd backend && npm run dev:team",
+    "dev:resume": "cd backend && npm run dev:resume",
+    "dev:tracking": "cd backend && npm run dev:tracking",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "cd backend && npm test",
+    "test:frontend": "cd frontend && npm test",
+    "test:integration": "cd backend && npm run test:integration",
+    "test:e2e": "cd backend && npm run test:e2e",
+    "test:coverage": "cd backend && npm run test:coverage",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:fix": "npm run lint:fix:backend && npm run lint:fix:frontend",
+    "lint:fix:backend": "cd backend && npm run lint:fix",
+    "lint:fix:frontend": "cd frontend && npm run lint:fix",
+    "format": "npm run format:backend && npm run format:frontend",
+    "format:backend": "cd backend && npm run format",
+    "format:frontend": "cd frontend && npm run format",
+    "type-check": "npm run type-check:backend && npm run type-check:frontend",
+    "type-check:backend": "cd backend && npm run type-check",
+    "type-check:frontend": "cd frontend && npm run type-check",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:clean": "docker-compose down -v --remove-orphans && docker system prune -f",
+    "k8s:deploy": "kubectl apply -f k8s/",
+    "k8s:delete": "kubectl delete -f k8s/",
+    "k8s:status": "kubectl get pods -n hackmatch",
+    "k8s:logs": "kubectl logs -f deployment/auth-service -n hackmatch",
+    "migrate": "cd backend && npm run migrate",
+    "migrate:rollback": "cd backend && npm run migrate:rollback",
+    "seed": "cd backend && npm run seed",
+    "db:reset": "cd backend && npm run db:reset",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm run preview",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "clean": "rm -rf node_modules backend/node_modules frontend/node_modules backend/dist frontend/dist",
+    "clean:install": "npm run clean && npm run install:all",
+    "security:audit": "npm audit && cd backend && npm audit && cd ../frontend && npm audit",
+    "security:fix": "npm audit fix && cd backend && npm audit fix && cd ../frontend && npm audit fix",
+    "docs:serve": "cd docs && python3 -m http.server 8080",
+    "health:check": "curl -f http://localhost:3001/health && curl -f http://localhost:5173",
+    "monitoring:up": "docker-compose -f docker-compose.monitoring.yml up -d",
+    "monitoring:down": "docker-compose -f docker-compose.monitoring.yml down",
+    "backup:db": "cd backend && npm run backup:db",
+    "restore:db": "cd backend && npm run restore:db"
+  },
+  "keywords": [
+    "hackathon",
+    "team-formation",
+    "ai-powered",
+    "real-time",
+    "microservices",
+    "react",
+    "nodejs",
+    "typescript",
+    "websocket",
+    "machine-learning",
+    "resume-analysis",
+    "matching-algorithm",
+    "event-driven",
+    "kubernetes",
+    "docker",
+    "cloud-native"
+  ],
+  "author": "HackMatch Team <team@hackmatch.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/hackathon-platform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/hackathon-platform/issues"
+  },
+  "homepage": "https://github.com/your-org/hackathon-platform#readme",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "@types/node": "^20.10.0"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "private": true,
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm run lint && npm run type-check",
+      "pre-push": "npm run test",
+      "commit-msg": "commitlint -E HUSKY_GIT_PARAMS"
+    }
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}
+
