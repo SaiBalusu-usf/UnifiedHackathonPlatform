@@ -55,10 +55,11 @@
     "react-router-dom": "^7.6.1",
     "recharts": "^2.15.3",
     "socket.io-client": "^4.8.1",
-    "sonner": "^2.0.3",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.0",
     "tailwindcss": "^4.1.7",
     "vaul": "^1.1.2",
+    "websocket": "^1.0.35",
     "zod": "^3.24.4"
   },
   "devDependencies": {
