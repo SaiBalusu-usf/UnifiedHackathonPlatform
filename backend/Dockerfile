@@ -47,7 +47,7 @@ RUN apk add --no-cache \
 COPY package*.json ./
 
 # Install all dependencies
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -56,7 +56,7 @@ COPY . .
 RUN npm run build
 
 # Remove dev dependencies
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --legacy-peer-deps --only=production && npm cache clean --force
 
 # Production stage
 FROM node:18-alpine AS production

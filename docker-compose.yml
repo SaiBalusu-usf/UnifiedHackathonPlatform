@@ -25,7 +25,7 @@ services:
       retries: 3
 
   mongodb:
-    image: mongo:6-alpine
+    image: mongo:6.0
     container_name: unified-hackathon-mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: unified-hackathon
