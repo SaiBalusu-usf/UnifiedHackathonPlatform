@@ -18,7 +18,7 @@ RUN apk add --no-cache \
 COPY package*.json ./
 
 # Install dependencies (including dev dependencies)
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
