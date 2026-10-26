@@ -10,7 +10,7 @@ function load(kind, env) {
   const jwt = { sign: (payload, secret, options) => { calls.push({ secret, options }); return 'synthetic-token'; } };
   const context = { process: { env }, console, URLSearchParams, jwt, bcrypt: {}, exports: {}, require: name => {
     if (name === 'jsonwebtoken') return jwt;
-    if (name === 'bcrypt') return {};
+    if (name === 'bcryptjs') return {};
     throw new Error(`Unexpected dependency ${name}`);
   } };
   let code = fs.readFileSync(path.join(__dirname, kind === 'source' ? '../src/shared/middleware/auth.ts' : '../dist/shared/middleware/auth.js'), 'utf8');
@@ -21,6 +21,15 @@ function load(kind, env) {
   vm.runInNewContext(code, context);
   return { subject: kind === 'source' ? context.subject : context.exports, calls };
 }
+
+test('runtime password hashing uses its declared bcryptjs dependency', async () => {
+  process.env.JWT_SECRET = 'synthetic-access-key-for-tests-only-0000';
+  process.env.JWT_REFRESH_SECRET = 'synthetic-refresh-key-for-tests-only-1111';
+  const auth = require('../dist/shared/middleware/auth.js');
+  const hash = await auth.hashPassword('synthetic-test-password');
+  assert.equal(await auth.comparePassword('synthetic-test-password', hash), true);
+  assert.equal(await auth.comparePassword('wrong-test-password', hash), false);
+});
 
 for (const kind of ['source', 'dist']) {
   test(`${kind}: startup refuses missing, placeholder, short, or shared signing keys`, () => {

@@ -5,7 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyPasswordResetToken = exports.generatePasswordResetToken = exports.verifyEmailToken = exports.generateVerificationToken = exports.getGitHubUserInfo = exports.getGoogleUserInfo = exports.exchangeGitHubCode = exports.exchangeGoogleCode = exports.getLinkedInAuthUrl = exports.getGitHubAuthUrl = exports.getGoogleAuthUrl = exports.verifyOAuthState = exports.generateOAuthState = exports.verifyRefreshToken = exports.authorizeRoles = exports.optionalAuth = exports.authenticateToken = exports.comparePassword = exports.hashPassword = exports.generateTokens = exports.oauthProviders = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const bcrypt_1 = __importDefault(require("bcrypt"));
+const bcrypt_1 = __importDefault(require("bcryptjs"));
 function requiredSigningKey(name) {
   const value = process.env[name];
   if (!value || value.trim().length < 32 || /^(your-|change[-_]?me|replace[-_]?me)/i.test(value)) {

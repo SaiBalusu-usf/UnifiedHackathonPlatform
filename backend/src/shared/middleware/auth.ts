@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 import { Request, Response, NextFunction } from 'express'
 import { JwtPayload } from '../types'
 import { Role } from './rbac'

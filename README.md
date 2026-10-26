@@ -348,3 +348,11 @@ operator-led key replacement and session invalidation before exposing it again.
 Run node --test backend/tests/auth-config.test.cjs on Node.js 22.13+ or 24 to check
 both the TypeScript source and the tracked runtime artifact without network calls.
 This change does not implement the unfinished user store, token revocation, or 2FA.
+
+The root workspace and standalone backend lockfiles have been refreshed within
+their existing dependency ranges. Authentication uses the declared `bcryptjs`
+package. Run `npm ci --ignore-scripts` before the five focused security tests.
+The broader TypeScript build currently reports pre-existing project errors
+(including missing test globals and incomplete event/type definitions); the
+security workflow deliberately reports only its named regression suite.
+Full database/integration validation requires isolated configured services.
