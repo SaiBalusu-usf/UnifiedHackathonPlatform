@@ -97,8 +97,8 @@
     "npm": ">=8.0.0"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "@types/node": "^20.10.0"
+    "@types/node": "^20.10.0",
+    "concurrently": "^8.2.2"
   },
   "workspaces": [
     "backend",
@@ -125,6 +125,9 @@
     "*.{json,md,yml,yaml}": [
       "prettier --write"
     ]
+  },
+  "optionalDependencies": {
+    "@unrs/resolver-binding-linux-x64-gnu": "1.11.1",
+    "@unrs/resolver-binding-linux-x64-musl": "1.11.1"
   }
 }
-
