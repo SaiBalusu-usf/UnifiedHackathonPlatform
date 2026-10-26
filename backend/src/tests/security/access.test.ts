@@ -20,6 +20,7 @@ import { ResumeModel } from '../../services/resume-analysis/models'
 import { TrackingLogModel } from '../../services/tracking/models'
 import userRoutes from '../../services/user-management/routes'
 import resumeRoutes from '../../services/resume-analysis/routes'
+import authRoutes from '../../services/auth/routes'
 import trackingRoutes from '../../services/tracking/routes'
 
 const alice = '550e8400-e29b-41d4-a716-446655440001'
@@ -193,4 +194,13 @@ test('a hackathon organizer can read a participating user resume and scoped hist
   await request(app).get(`/resumes/${bob}`).set('Authorization',`Bearer ${organizerToken}`).expect(200)
   await request(app).get(`/tracking/user/${bob}?hackathonId=${hackathon}`).set('Authorization',`Bearer ${organizerToken}`).expect(200)
   expect(locationLookup).toHaveBeenCalledWith({user_id:bob,hackathon_id:hackathon})
+})
+
+
+test('public auth registration rejects a supplied privileged role before persistence', async () => {
+  const app=express();app.use(express.json());app.use('/auth',authRoutes)
+  await request(app).post('/auth/register').send({username:'malicious',email:'malicious@example.invalid',
+    firstName:'Public',lastName:'Fixture',password:'FixturePassword123!',role:'admin'}).expect(400)
+  const result=await memoryPool.query('SELECT user_id FROM users WHERE username=$1',['malicious'])
+  expect(result.rows).toHaveLength(0)
 })

@@ -29,6 +29,7 @@ const router = Router()
 
 // Public routes (no authentication required)
 router.post('/register', 
+  body('role').not().exists().withMessage('Public registration cannot set a role'),
   userValidation.register,
   handleValidationErrors,
   register
