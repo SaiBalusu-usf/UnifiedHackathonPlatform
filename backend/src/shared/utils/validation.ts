@@ -50,7 +50,7 @@ export const validateEmailField = (req: Request, res: Response, next: NextFuncti
 export const validatePasswordField = (req: Request, res: Response, next: NextFunction): void => {
   const { password } = req.body;
   
-  if (password && !validatePassword(password)) {
+  if (typeof password !== 'string' || Buffer.byteLength(password, 'utf8') > 72 || !validatePassword(password)) {
     sendError(res, 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number', undefined, 400);
     return;
   }

@@ -91,7 +91,7 @@ const RegisterPage = () => {
     setIsLoading(true)
     setErrors({})
 
-    const { confirmPassword, ...registrationData } = formData
+    const { confirmPassword: _confirmPassword, ...registrationData } = formData
     const result = await register({
       ...registrationData,
       first_name: registrationData.firstName,

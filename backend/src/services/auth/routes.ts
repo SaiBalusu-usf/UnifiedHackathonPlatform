@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { body } from 'express-validator'
 import { 
   register,
   login,
@@ -50,6 +51,8 @@ router.post('/forgot-password',
 
 router.post('/reset-password',
   strictRateLimit,
+  body('newPassword').isString().isLength({min:8,max:72}),
+  handleValidationErrors,
   resetPassword
 )
 
@@ -67,19 +70,22 @@ router.use(authenticateToken)
 router.post('/logout', logout)
 
 router.get('/profile', 
-  requirePermission(Permission.USER_READ, { checkOwnership: true, resourceType: 'user' }),
+  requirePermission(Permission.USER_READ, {}),
   getProfile
 )
 
 router.put('/profile',
   userValidation.updateProfile,
   handleValidationErrors,
-  requirePermission(Permission.USER_WRITE, { checkOwnership: true, resourceType: 'user' }),
+  requirePermission(Permission.USER_WRITE, {}),
   updateProfile
 )
 
 router.put('/change-password',
   strictRateLimit,
+  body('newPassword').isString().isLength({min:8,max:72}),
+  body('currentPassword').isString().notEmpty(),
+  handleValidationErrors,
   changePassword
 )
 

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'node:crypto';
 import { pgPool } from '../../config/database';
 import { sendSuccess, sendError } from '../../shared/utils/response';
 import { validateUUID } from '../../shared/utils/validation';

@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs'
 import { Request, Response, NextFunction } from 'express'
 import { JwtPayload } from '../types'
 import { Role } from './rbac'
+import { getUser } from '../../services/auth/repository'
+import { configuredTokenLifetime } from '../utils/runtimeConfig'
 
 function requiredSigningKey(name: string): string {
   const value = process.env[name];
@@ -16,8 +18,8 @@ const JWT_REFRESH_SECRET = requiredSigningKey('JWT_REFRESH_SECRET');
 if (JWT_SECRET === JWT_REFRESH_SECRET) {
   throw new Error('JWT_SECRET and JWT_REFRESH_SECRET must be different');
 }
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '15m'
-const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d'
+const JWT_EXPIRES_IN = configuredTokenLifetime('JWT_EXPIRES_IN', 15 * 60)
+const JWT_REFRESH_EXPIRES_IN = configuredTokenLifetime('JWT_REFRESH_EXPIRES_IN', 7 * 86400)
 
 export interface AuthenticatedRequest extends Request {
   user?: JwtPayload & { permissions?: string[] }
@@ -47,16 +49,18 @@ export const oauthProviders = {
 
 // Token generation utilities
 export const generateTokens = (payload: JwtPayload) => {
-  const accessToken = jwt.sign(payload, JWT_SECRET, {
+  const accessToken = jwt.sign({ userId: payload.userId, email: payload.email, role: payload.role, tokenVersion: payload.tokenVersion ?? 0, type: 'access' }, JWT_SECRET, {
+    algorithm: 'HS256',
     expiresIn: JWT_EXPIRES_IN,
     issuer: 'unified-hackathon-platform',
     audience: 'unified-hackathon-users'
   })
 
   const refreshToken = jwt.sign(
-    { userId: payload.userId, tokenVersion: payload.tokenVersion || 0 },
+    { userId: payload.userId, tokenVersion: payload.tokenVersion ?? 0, type: 'refresh' },
     JWT_REFRESH_SECRET,
     {
+      algorithm: 'HS256',
       expiresIn: JWT_REFRESH_EXPIRES_IN,
       issuer: 'unified-hackathon-platform',
       audience: 'unified-hackathon-users'
@@ -68,6 +72,7 @@ export const generateTokens = (payload: JwtPayload) => {
 
 // Password utilities
 export const hashPassword = async (password: string): Promise<string> => {
+  if (typeof password !== 'string' || password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) throw new Error('Password must be 8 characters to 72 UTF-8 bytes')
   const saltRounds = 12
   return bcrypt.hash(password, saltRounds)
 }
@@ -76,11 +81,27 @@ export const comparePassword = async (password: string, hashedPassword: string):
   return bcrypt.compare(password, hashedPassword)
 }
 
+export async function verifyAccessToken(token: string): Promise<JwtPayload> {
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      issuer: 'unified-hackathon-platform',
+      audience: 'unified-hackathon-users',
+      algorithms: ['HS256']
+    }) as JwtPayload
+
+    if (!decoded || decoded.type !== 'access' || typeof decoded.userId !== 'string' ||
+        typeof decoded.email !== 'string' || typeof decoded.role !== 'string' ||
+        !Number.isInteger(decoded.tokenVersion)) throw new jwt.JsonWebTokenError('Invalid access claims')
+    const account = await getUser(decoded.userId)
+    if (!account || account.tokenVersion !== decoded.tokenVersion || account.role !== decoded.role ||
+        account.email !== decoded.email) throw new jwt.JsonWebTokenError('Revoked account session')
+  return decoded
+}
+
 // JWT verification middleware
 export const authenticateToken = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization
-    const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
+    const token = authHeader?.match(/^Bearer ([^\s]+)$/i)?.[1]
 
     if (!token) {
       return res.status(401).json({
@@ -90,13 +111,7 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
       })
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET, {
-      issuer: 'unified-hackathon-platform',
-      audience: 'unified-hackathon-users'
-    }) as JwtPayload
-
-    // In a real implementation, you might want to check if the user still exists
-    // and if their token version is still valid
+    const decoded = await verifyAccessToken(token)
     req.user = decoded
     next()
   } catch (error) {
@@ -125,23 +140,8 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
 
 // Optional authentication middleware (doesn't fail if no token)
 export const optionalAuth = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization
-    const token = authHeader && authHeader.split(' ')[1]
-
-    if (token) {
-      const decoded = jwt.verify(token, JWT_SECRET, {
-        issuer: 'unified-hackathon-platform',
-        audience: 'unified-hackathon-users'
-      }) as JwtPayload
-      req.user = decoded
-    }
-    
-    next()
-  } catch (error) {
-    // Silently fail for optional auth
-    next()
-  }
+  if (req.headers.authorization) return authenticateToken(req, res, next)
+  next()
 }
 
 // Legacy role authorization (for backward compatibility)
@@ -172,12 +172,15 @@ export const verifyRefreshToken = (refreshToken: string): Promise<JwtPayload> =>
   return new Promise((resolve, reject) => {
     jwt.verify(refreshToken, JWT_REFRESH_SECRET, {
       issuer: 'unified-hackathon-platform',
-      audience: 'unified-hackathon-users'
+      audience: 'unified-hackathon-users',
+      algorithms: ['HS256']
     }, (error, decoded) => {
       if (error) {
         reject(error)
       } else {
-        resolve(decoded as JwtPayload)
+        const claims = decoded as JwtPayload
+        if (!claims || claims.type !== 'refresh' || typeof claims.userId !== 'string' || !Number.isInteger(claims.tokenVersion)) reject(new jwt.JsonWebTokenError('Invalid refresh claims'))
+        else resolve(claims)
       }
     })
   })
@@ -300,22 +303,36 @@ export const exchangeGitHubCode = async (code: string): Promise<any> => {
 
 // OAuth user info fetchers
 export const getGoogleUserInfo = async (accessToken: string): Promise<any> => {
-  const response = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`)
+  const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    redirect: 'error', signal: AbortSignal.timeout(10000)
+  })
   
   if (!response.ok) {
     throw new Error('Failed to fetch Google user info')
   }
 
-  return response.json()
+  const user = await response.json()
+  if (!isObject(user) || typeof user.id !== 'string' || typeof user.email !== 'string' ||
+      user.verified_email !== true) {
+    throw new Error('Google account must have a verified email')
+  }
+  return user
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export const getGitHubUserInfo = async (accessToken: string): Promise<any> => {
   const [userResponse, emailResponse] = await Promise.all([
     fetch('https://api.github.com/user', {
-      headers: { Authorization: `token ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
+      redirect: 'error', signal: AbortSignal.timeout(10000)
     }),
     fetch('https://api.github.com/user/emails', {
-      headers: { Authorization: `token ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
+      redirect: 'error', signal: AbortSignal.timeout(10000)
     })
   ])
 
@@ -325,11 +342,17 @@ export const getGitHubUserInfo = async (accessToken: string): Promise<any> => {
 
   const user = await userResponse.json()
   const emails = await emailResponse.json()
-  const primaryEmail = emails.find((email: any) => email.primary)
+  if (!isObject(user) || typeof user.id !== 'number' || !Array.isArray(emails)) {
+    throw new Error('Invalid GitHub identity response')
+  }
+  const verifiedEmails = emails.filter(isObject).filter(email =>
+    email.verified === true && typeof email.email === 'string')
+  const primaryEmail = verifiedEmails.find(email => email.primary === true) || verifiedEmails[0]
+  if (!primaryEmail) throw new Error('GitHub account must have a verified email')
 
   return {
     ...user,
-    email: primaryEmail?.email || user.email
+    email: primaryEmail.email
   }
 }
 
@@ -344,7 +367,7 @@ export const generateVerificationToken = (userId: string): string => {
 
 export const verifyEmailToken = (token: string): JwtPayload | null => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload
     return decoded.type === 'email_verification' ? decoded : null
   } catch {
     return null
@@ -352,9 +375,9 @@ export const verifyEmailToken = (token: string): JwtPayload | null => {
 }
 
 // Password reset
-export const generatePasswordResetToken = (userId: string): string => {
+export const generatePasswordResetToken = (userId: string, tokenVersion: number): string => {
   return jwt.sign(
-    { userId, type: 'password_reset' },
+    { userId, tokenVersion, type: 'password_reset' },
     JWT_SECRET,
     { expiresIn: '1h' }
   )
@@ -362,7 +385,7 @@ export const generatePasswordResetToken = (userId: string): string => {
 
 export const verifyPasswordResetToken = (token: string): JwtPayload | null => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload
     return decoded.type === 'password_reset' ? decoded : null
   } catch {
     return null

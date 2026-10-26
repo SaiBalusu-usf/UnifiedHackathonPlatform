@@ -1,19 +1,22 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'node:crypto';
 import { pgPool } from '../../config/database';
 import { sendSuccess, sendError } from '../../shared/utils/response';
 import { validateUUID } from '../../shared/utils/validation';
 import { User, JwtPayload } from '../../shared/types';
 import { AuthenticatedRequest } from '../../shared/middleware/auth';
+import { generateTokens } from '../../shared/middleware/auth';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 
 export class UserController {
   async register(req: Request, res: Response): Promise<void> {
-    const { username, email, password, first_name, last_name, role = 'participant' } = req.body;
+    const { username, email, password, first_name, last_name } = req.body;
+    if (req.body.role !== undefined && req.body.role !== 'participant') {
+      sendError(res, 'Public registration only creates participant accounts', undefined, 403);
+      return;
+    }
+    const role = 'participant';
 
     try {
       // Check if user already exists
@@ -73,7 +76,7 @@ export class UserController {
     try {
       // Find user
       const result = await pgPool.query(
-        'SELECT user_id, email, password_hash, role FROM users WHERE email = $1',
+        'SELECT user_id, email, username, first_name, last_name, password_hash, role, token_version, two_factor_enabled FROM users WHERE email = $1',
         [email]
       );
 
@@ -83,6 +86,7 @@ export class UserController {
       }
 
       const user = result.rows[0];
+      if (user.two_factor_enabled) { sendError(res, 'Second-factor verification is not configured', undefined, 503); return; }
 
       // Verify password
       const isValidPassword = await bcrypt.compare(password, user.password_hash);
@@ -95,12 +99,13 @@ export class UserController {
       const payload: JwtPayload = {
         userId: user.user_id,
         email: user.email,
-        role: user.role
+        role: user.role,
+        tokenVersion: user.token_version
       };
 
-      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      const { accessToken: token } = generateTokens(payload);
 
-      sendSuccess(res, 'Login successful', { token });
+      sendSuccess(res, 'Login successful', { token, user: { userId: user.user_id, email: user.email, username: user.username, firstName: user.first_name, lastName: user.last_name, role: user.role } });
     } catch (error) {
       console.error('Login error:', error);
       sendError(res, 'Failed to login', undefined, 500);
@@ -133,6 +138,7 @@ export class UserController {
         firstName: user.first_name,
         lastName: user.last_name,
         role: user.role,
+        tokenVersion: user.token_version,
         skills: user.skills || [],
         interests: user.interests || [],
         resumeUrl: user.resume_url,
@@ -283,6 +289,7 @@ export class UserController {
 
   async updateUser(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      if (req.user?.role !== 'admin') { sendError(res, 'Administrator access required', undefined, 403); return; }
       const { userId } = req.params;
       const { role } = req.body;
 
@@ -292,14 +299,14 @@ export class UserController {
       }
 
       const validRoles = ['participant', 'organizer', 'admin'];
-      if (role && !validRoles.includes(role)) {
+      if (!validRoles.includes(role)) {
         sendError(res, 'Invalid role', undefined, 400);
         return;
       }
 
       const now = new Date();
       await pgPool.query(
-        'UPDATE users SET role = $1, updated_at = $2 WHERE user_id = $3',
+        'UPDATE users SET role = $1, token_version=token_version+1, updated_at = $2 WHERE user_id = $3',
         [role, now, userId]
       );
 

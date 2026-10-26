@@ -10,6 +10,8 @@ export enum EventType {
 
   // Team events
   TEAM_CREATED = 'team_created',
+  TEAM_FORMATION_REQUEST = 'team_formation_request',
+  TEAM_FORMED = 'team_formed',
   TEAM_UPDATED = 'team_updated',
   TEAM_DELETED = 'team_deleted',
   TEAM_MEMBER_ADDED = 'team_member_added',
@@ -62,6 +64,7 @@ export enum EventType {
   MESSAGE_SENT = 'message_sent',
   MESSAGE_RECEIVED = 'message_received',
   NOTIFICATION_SENT = 'notification_sent',
+  NOTIFICATION_SEND = 'notification_send',
   TYPING_STARTED = 'typing_started',
   TYPING_STOPPED = 'typing_stopped',
 
@@ -69,6 +72,7 @@ export enum EventType {
   SYSTEM_MAINTENANCE_START = 'system_maintenance_start',
   SYSTEM_MAINTENANCE_END = 'system_maintenance_end',
   SYSTEM_ERROR = 'system_error',
+  SYSTEM_INFO = 'system_info',
   SYSTEM_HEALTH_CHECK = 'system_health_check'
 }
 
@@ -83,6 +87,7 @@ export interface BaseEvent {
   userId?: string
   hackathonId?: string
   teamId?: string
+  data?: Record<string, unknown>
 }
 
 // User events

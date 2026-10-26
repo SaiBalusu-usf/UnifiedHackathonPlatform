@@ -1,3 +1,4 @@
+import { EventType } from '../shared/events/eventTypes'
 import { EventEmitter } from 'events';
 import Agent from './base/Agent';
 import ProfileParsingAgent from './ProfileParsingAgent';
@@ -21,6 +22,7 @@ export class AgentManager extends EventEmitter {
   private startTimes: Map<string, Date> = new Map();
   private lastActivity: Map<string, Date> = new Map();
   private isInitialized: boolean = false;
+  private subscriptions: Array<() => void> = [];
 
   constructor() {
     super();
@@ -66,15 +68,15 @@ export class AgentManager extends EventEmitter {
 
   private setupEventListeners(): void {
     // Listen to system events for agent management
-    eventBus.subscribe(EventType.SYSTEM_HEALTH_CHECK, (event: any) => {
+    this.subscriptions.push(eventBus.subscribeLegacy(EventType.SYSTEM_HEALTH_CHECK, (event) => {
       if (event.payload.message === 'Hackathon Platform Gateway started successfully') {
         this.startAllAgents();
       }
-    });
+    }));
 
-    eventBus.subscribe(EventType.SYSTEM_ERROR, (event: any) => {
+    this.subscriptions.push(eventBus.subscribeLegacy(EventType.SYSTEM_ERROR, (event) => {
       console.error('[AgentManager] System error detected:', event.payload);
-    });
+    }));
   }
 
   public startAllAgents(): void {
@@ -283,7 +285,10 @@ export class AgentManager extends EventEmitter {
     console.log('[AgentManager] Cleaning up...');
     this.stopAllAgents();
     this.removeAllListeners();
+    this.agents.forEach(agent => agent.dispose());
     this.agents.clear();
+    this.subscriptions.forEach(unsubscribe => unsubscribe());
+    this.subscriptions = [];
     this.startTimes.clear();
     this.lastActivity.clear();
     this.isInitialized = false;

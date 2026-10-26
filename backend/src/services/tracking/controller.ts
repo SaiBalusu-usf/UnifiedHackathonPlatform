@@ -1,5 +1,6 @@
+import { getUserHackathonRole } from '../../shared/middleware/rbac';
 import { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'node:crypto';
 import { TrackingLogModel, SessionModel } from './models';
 import { sendSuccess, sendError } from '../../shared/utils/response';
 import { validateUUID } from '../../shared/utils/validation';
@@ -130,8 +131,10 @@ export class TrackingController {
         return;
       }
 
-      // Users can only see their own tracking history unless they're admin/organizer
-      if (userId !== requesterId && !['admin', 'organizer'].includes(req.user?.role || '')) {
+      // Cross-user history must be restricted to a hackathon the requester organizes.
+      if (userId !== requesterId && req.user?.role !== 'admin' &&
+          !(req.user?.role === 'organizer' && requesterId && typeof hackathonId === 'string' &&
+            validateUUID(hackathonId) && await getUserHackathonRole(requesterId, hackathonId) === 'organizer')) {
         sendError(res, 'Insufficient permissions', undefined, 403);
         return;
       }

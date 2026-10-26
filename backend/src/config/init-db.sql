@@ -128,26 +128,7 @@ CREATE TRIGGER update_hackathons_updated_at BEFORE UPDATE ON hackathons
 CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON teams
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Insert sample data for testing
-INSERT INTO users (user_id, username, email, password_hash, first_name, last_name, role) VALUES
-('550e8400-e29b-41d4-a716-446655440000', 'admin', 'admin@hackathon.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VJBzxqrxe', 'Admin', 'User', 'admin'),
-('550e8400-e29b-41d4-a716-446655440001', 'organizer1', 'organizer@hackathon.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VJBzxqrxe', 'John', 'Organizer', 'organizer'),
-('550e8400-e29b-41d4-a716-446655440002', 'participant1', 'participant1@hackathon.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VJBzxqrxe', 'Alice', 'Developer', 'participant'),
-('550e8400-e29b-41d4-a716-446655440003', 'participant2', 'participant2@hackathon.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VJBzxqrxe', 'Bob', 'Designer', 'participant')
-ON CONFLICT (user_id) DO NOTHING;
-
--- Insert profiles for sample users
-INSERT INTO profiles (profile_id, user_id, skills, interests) VALUES
-('660e8400-e29b-41d4-a716-446655440000', '550e8400-e29b-41d4-a716-446655440000', '{"system administration", "database management"}', '{"platform management", "user experience"}'),
-('660e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', '{"event management", "community building"}', '{"hackathons", "innovation"}'),
-('660e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440002', '{"javascript", "react", "node.js", "python"}', '{"web development", "machine learning", "fintech"}'),
-('660e8400-e29b-41d4-a716-446655440003', '550e8400-e29b-41d4-a716-446655440003', '{"ui/ux design", "figma", "adobe creative suite"}', '{"user experience", "mobile apps", "accessibility"}')
-ON CONFLICT (user_id) DO NOTHING;
-
--- Insert sample hackathon
-INSERT INTO hackathons (hackathon_id, name, description, start_date, end_date, created_by) VALUES
-('770e8400-e29b-41d4-a716-446655440000', 'AI Innovation Hackathon 2024', 'A 48-hour hackathon focused on AI and machine learning innovations', '2024-03-15 09:00:00+00', '2024-03-17 18:00:00+00', '550e8400-e29b-41d4-a716-446655440001')
-ON CONFLICT (hackathon_id) DO NOTHING;
+-- Production initialization deliberately creates no sample accounts.
 
 -- Grant permissions (adjust as needed for your setup)
 -- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO hackathon_user;

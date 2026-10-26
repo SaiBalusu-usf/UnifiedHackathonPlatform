@@ -1,3 +1,4 @@
+import { configuredPort } from '../../shared/utils/runtimeConfig';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -6,7 +7,7 @@ import { connectMongoDB } from '../../config/database';
 import trackingRoutes from './routes';
 
 const app = express();
-const PORT = process.env.TRACKING_SERVICE_PORT || 3004;
+const PORT = configuredPort("TRACKING_SERVICE_PORT", 3004);
 
 // Middleware
 app.use(helmet());
@@ -14,7 +15,7 @@ app.use(cors({
   origin: '*', // Allow all origins for development
   credentials: true
 }));
-app.use(morgan('combined'));
+app.use(morgan(':method :status :res[content-length] - :response-time ms'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -37,7 +38,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 });
 
 // 404 handler
-app.use('*', (req, res) => {
+app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: 'Route not found'
@@ -69,5 +70,7 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-startServer();
+if (require.main === module) void startServer();
 
+
+export default app;

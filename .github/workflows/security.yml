@@ -16,5 +16,12 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
+      - run: npm run build:backend
       - run: node --test backend/tests/auth-config.test.cjs
+      - run: npm run type-check:tests --workspace backend
+      - run: npm run test:unit --workspace backend -- --runInBand
+      - run: npm run build:frontend
+      - run: npm test --workspace frontend
+      - run: npm run lint --workspace frontend
+      - run: npm audit --audit-level=low

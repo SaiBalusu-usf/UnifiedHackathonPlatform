@@ -3,8 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { useAuth } from '@/contexts/AuthContext'
-import { useWebSocket } from '@/contexts/WebSocketContext'
 import { useToast } from '@/hooks/use-toast'
 import { 
   Play, 
@@ -19,9 +17,7 @@ import {
   Award
 } from 'lucide-react'
 
-const SessionTracker = ({ hackathonId, teamId }) => {
-  const { user } = useAuth()
-  const { connected } = useWebSocket()
+const SessionTracker = () => {
   const { toast } = useToast()
   
   const [session, setSession] = useState({

@@ -13,6 +13,7 @@ export interface AgentConfig {
 
 export abstract class Agent extends EventEmitter {
   protected config: AgentConfig;
+  private subscriptions: Array<() => void> = [];
   protected isRunning: boolean = false;
   protected processedEvents: Map<string, Date> = new Map();
 
@@ -29,7 +30,7 @@ export abstract class Agent extends EventEmitter {
     }
 
     this.config.subscribeToEvents.forEach(eventType => {
-      eventBus.subscribe(eventType, this.handleEvent.bind(this));
+      this.subscriptions.push(eventBus.subscribeLegacy(eventType, this.handleEvent.bind(this)));
     });
 
     console.log(`[Agent] ${this.config.name} initialized and listening to ${this.config.subscribeToEvents.length} event types`);
@@ -103,6 +104,13 @@ export abstract class Agent extends EventEmitter {
     this.isRunning = false;
     console.log(`[Agent] ${this.config.name} stopped`);
     this.onStop();
+  }
+
+  public dispose(): void {
+    this.stop();
+    this.subscriptions.forEach(unsubscribe => unsubscribe());
+    this.subscriptions = [];
+    this.removeAllListeners();
   }
 
   public getStatus(): {
