@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for HackMatch Frontend
 
 # Development stage
-FROM node:18-alpine AS development
+FROM node:24-alpine AS development
 
 # Set working directory
 WORKDIR /app
@@ -10,22 +10,24 @@ WORKDIR /app
 RUN apk add --no-cache curl bash
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
 
 # Install dependencies
-RUN npm install --legacy-peer-deps
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Copy source code
-COPY . .
+COPY frontend ./frontend
 
 # Expose development port
 EXPOSE 5173
 
 # Start development server
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "dev", "--workspace", "frontend", "--", "--host", "0.0.0.0"]
 
 # Build stage
-FROM node:18-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -33,16 +35,18 @@ WORKDIR /app
 RUN apk add --no-cache curl bash
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
 
 # Install dependencies
-RUN npm install --legacy-peer-deps
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Copy source code
-COPY . .
+COPY frontend ./frontend
 
 # Build the application
-RUN npm run build
+RUN npm run build --workspace frontend
 
 # Production stage with Nginx
 FROM nginx:alpine AS production
@@ -54,10 +58,10 @@ RUN apk add --no-cache curl
 RUN rm -rf /usr/share/nginx/html/*
 
 # Copy built application
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 
 # Copy nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY frontend/nginx.conf /etc/nginx/nginx.conf
 
 # Create nginx user and set permissions
 RUN addgroup -g 1001 -S nginx-group && \
@@ -85,52 +89,58 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 CMD ["nginx", "-g", "daemon off;"]
 
 # Testing stage
-FROM node:18-alpine AS testing
+FROM node:24-alpine AS testing
 
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
 
 # Install dependencies including dev dependencies
-RUN npm install --legacy-peer-deps
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Copy source code
-COPY . .
+COPY frontend ./frontend
 
 # Run tests
-RUN npm run test
+RUN npm test --workspace frontend
 
 # Linting stage
-FROM node:18-alpine AS linting
+FROM node:24-alpine AS linting
 
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
 
 # Install dependencies
-RUN npm install --legacy-peer-deps
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Copy source code
-COPY . .
+COPY frontend ./frontend
 
 # Run linting
-RUN npm run lint
+RUN npm run lint --workspace frontend
 
 # Security scanning stage
-FROM node:18-alpine AS security
+FROM node:24-alpine AS security
 
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
 
 # Install dependencies
-RUN npm install --legacy-peer-deps
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Copy source code
-COPY . .
+COPY frontend ./frontend
 
 # Run security audit
 RUN npm audit --audit-level=high

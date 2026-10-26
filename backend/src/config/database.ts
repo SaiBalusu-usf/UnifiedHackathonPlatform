@@ -3,10 +3,11 @@ import mongoose from 'mongoose';
 
 // PostgreSQL configuration
 const pgConfig = {
+  ...(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {}),
   user: process.env.PG_USER || 'postgres',
   host: process.env.PG_HOST || 'localhost',
   database: process.env.PG_DATABASE || 'hackathon_platform',
-  password: process.env.PG_PASSWORD || 'password',
+  password: process.env.PG_PASSWORD,
   port: parseInt(process.env.PG_PORT || '5432'),
   max: 20, // Maximum number of clients in the pool
   idleTimeoutMillis: 30000,
@@ -15,7 +16,7 @@ const pgConfig = {
 
 // MongoDB configuration
 const mongoConfig = {
-  uri: process.env.MONGO_URI || 'mongodb://localhost:27017/hackathon_platform',
+  uri: process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/hackathon_platform',
   options: {
     maxPoolSize: 10,
     serverSelectionTimeoutMS: 5000,
@@ -24,7 +25,7 @@ const mongoConfig = {
 };
 
 // PostgreSQL connection pool
-export const pgPool = new Pool(pgConfig);
+export const pgPool = new Pool(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL, max: 20, connectionTimeoutMillis: 2000 } : pgConfig);
 
 // MongoDB connection
 export const connectMongoDB = async (): Promise<void> => {

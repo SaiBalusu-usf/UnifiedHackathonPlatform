@@ -2,7 +2,7 @@ import Agent, { AgentConfig } from './base/Agent';
 import { Event } from '../shared/types';
 import { EventTypes } from '../shared/events/eventBus';
 import { pgPool } from '../config/database';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'node:crypto';
 
 interface TeamFormationRequest {
   requesterId: string;

@@ -34,13 +34,7 @@ describe('Platform End-to-End Tests', () => {
 
     // Initialize agent manager
     agentManager = new AgentManager()
-    agentManager.registerAgent(new ProfileParsingAgent('profile-agent-e2e'))
-    agentManager.registerAgent(new SkillMatchingAgent('skill-agent-e2e'))
-    agentManager.registerAgent(new TeamFormingAgent('team-agent-e2e'))
-
-    await agentManager.startAgent('profile-agent-e2e')
-    await agentManager.startAgent('skill-agent-e2e')
-    await agentManager.startAgent('team-agent-e2e')
+    agentManager.startAllAgents()
 
     // Wait for services to be ready
     await new Promise(resolve => setTimeout(resolve, 1000))
@@ -51,7 +45,7 @@ describe('Platform End-to-End Tests', () => {
       clientSocket.disconnect()
     }
     
-    agentManager.shutdown()
+    agentManager.cleanup()
     authServer.close()
     userServer.close()
     teamServer.close()
@@ -271,7 +265,7 @@ describe('Platform End-to-End Tests', () => {
           clientSocket.emit('join-hackathon', 'test-hackathon-id')
           
           // Listen for location updates
-          clientSocket.on('location-update', (data) => {
+          clientSocket.on('location-update', (data: { userId: string; location: { latitude: number; longitude: number } }) => {
             expect(data).toMatchObject({
               userId: expect.any(String),
               location: expect.objectContaining({
@@ -298,7 +292,7 @@ describe('Platform End-to-End Tests', () => {
           }, 500)
         })
 
-        clientSocket.on('connect_error', (error) => {
+        clientSocket.on('connect_error', (error: Error) => {
           clearTimeout(timeout)
           reject(error)
         })

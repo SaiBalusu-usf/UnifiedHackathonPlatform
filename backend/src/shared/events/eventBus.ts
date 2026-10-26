@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID as uuidv4 } from 'node:crypto'
 import { EventType, PlatformEvent, EventHandler, EventPublisher, EventSubscriber } from './eventTypes'
+import { Event as LegacyEvent } from '../types'
 
 export class EventBus extends EventEmitter implements EventPublisher, EventSubscriber {
   private static instance: EventBus
@@ -21,7 +22,13 @@ export class EventBus extends EventEmitter implements EventPublisher, EventSubsc
   }
 
   // Publish a single event
-  async publish(event: PlatformEvent): Promise<void> {
+  async publish(event: PlatformEvent): Promise<void>
+  async publish(type: string, payload: Record<string, unknown>, source: string): Promise<void>
+  async publish(eventOrType: PlatformEvent | string, payload?: Record<string, unknown>, source?: string): Promise<void> {
+    const event: PlatformEvent = typeof eventOrType === 'string' ? {
+      id: uuidv4(), type: eventOrType.replace(/\./g, '_') as EventType,
+      timestamp: new Date(), source: source || 'LegacyPublisher', version: '1.0', data: payload,
+    } : eventOrType
     try {
       // Ensure event has required fields
       if (!event.id) {
@@ -77,6 +84,14 @@ export class EventBus extends EventEmitter implements EventPublisher, EventSubsc
     console.log(`[EventBus] Handler subscribed to event type: ${eventType}`)
   }
 
+  subscribeLegacy(eventType: EventType, handler: (event: LegacyEvent) => void | Promise<void>): () => void {
+    const adapter: EventHandler = { handle: async event => {
+      await handler({ type: event.type, payload: event.data, timestamp: event.timestamp, source: event.source })
+    } }
+    this.subscribe(eventType, adapter)
+    return () => this.unsubscribe(eventType, adapter)
+  }
+
   // Unsubscribe from specific event type
   unsubscribe(eventType: EventType, handler: EventHandler): void {
     const handlers = this.handlers.get(eventType)
@@ -89,10 +104,10 @@ export class EventBus extends EventEmitter implements EventPublisher, EventSubsc
   }
 
   // Subscribe to all events
-  subscribeToAll(handler: EventHandler): void {
-    this.on('event', async (event: PlatformEvent) => {
-      await this.safeHandleEvent(handler, event)
-    })
+  subscribeToAll(handler: EventHandler): () => void {
+    const listener = async (event: PlatformEvent) => { await this.safeHandleEvent(handler, event) }
+    this.on('event', listener)
+    return () => { this.off('event', listener) }
   }
 
   // Legacy method for backward compatibility
@@ -120,6 +135,7 @@ export class EventBus extends EventEmitter implements EventPublisher, EventSubsc
     }
     
     return events
+      .slice()
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
       .slice(0, limit)
   }
@@ -186,8 +202,8 @@ export class EventBus extends EventEmitter implements EventPublisher, EventSubsc
   }
 
   // Get listener count for specific event type
-  getListenerCount(eventType: EventType): number {
-    const handlers = this.handlers.get(eventType)
+  getListenerCount(eventType: EventType | string): number {
+    const handlers = this.handlers.get(eventType as EventType)
     return handlers ? handlers.size : 0
   }
 
@@ -215,13 +231,15 @@ export class EventBus extends EventEmitter implements EventPublisher, EventSubsc
         source: 'EventBus',
         version: '1.0',
         data: {
-          error: error.message,
+          error: error instanceof Error ? error.message : 'Event handler failed',
           originalEvent: event,
           handlerName: handler.constructor.name
         }
       }
       
-      // Avoid infinite recursion by not awaiting this publish
+      // Do not recursively publish failures of the error handler itself.
+      if (event.type === EventType.SYSTEM_ERROR) return
+      // Deliver the diagnostic event independently.
       this.publish(errorEvent).catch(err => {
         console.error('[EventBus] Failed to publish error event:', err)
       })
@@ -292,7 +310,10 @@ export function createAgentEvent(
 }
 
 // Legacy exports for backward compatibility
+export { EventType }
+
 export const EventTypes = {
+  ...EventType,
   USER_REGISTERED: EventType.USER_REGISTERED,
   USER_UPDATED: EventType.USER_PROFILE_UPDATED,
   TEAM_CREATED: EventType.TEAM_CREATED,

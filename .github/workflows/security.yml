@@ -1,0 +1,65 @@
+name: Security regressions
+on:
+  pull_request:
+  push:
+    branches: ['fix/security-**']
+permissions:
+  contents: read
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SKIP_UNRS_RESOLVER_FALLBACK: "1"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
+      - run: npm run build:backend
+      - run: node --test backend/tests/auth-config.test.cjs
+      - run: npm run type-check:tests --workspace backend
+      - run: npm run test:unit --workspace backend -- --runInBand
+      - run: npm run build:frontend
+      - run: npm test --workspace frontend
+      - run: npm run lint --workspace frontend
+      - run: npm audit --audit-level=low
+
+  database-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-ci-fixture
+          POSTGRES_DB: security_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d security_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+    env:
+      DATABASE_URL: postgresql://postgres:isolated-ci-fixture@127.0.0.1:5432/security_ci
+      MONGODB_URI: mongodb://127.0.0.1:27017/security_ci
+      JWT_SECRET: isolated-ci-access-fixture-never-use-in-production
+      JWT_REFRESH_SECRET: isolated-ci-refresh-fixture-never-use-in-production
+      SKIP_UNRS_RESOLVER_FALLBACK: "1"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
+      - run: npm run build:backend
+      - run: node --test backend/tests/database-security.test.cjs

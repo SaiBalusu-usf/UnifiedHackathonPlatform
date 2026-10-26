@@ -1,13 +1,16 @@
 import { Server as HttpServer } from 'http'
 import { Server as SocketIOServer, Socket } from 'socket.io'
-import jwt from 'jsonwebtoken'
-import { v4 as uuidv4 } from 'uuid'
+import { verifyAccessToken } from '../middleware/auth'
+import { checkTeamMembership, checkHackathonAccess } from '../middleware/rbac'
+import { corsOptions } from '../middleware/security'
+import { randomUUID as uuidv4 } from 'node:crypto'
 import { eventBus } from './eventBus'
 import { EventType, PlatformEvent } from './eventTypes'
 
 interface AuthenticatedSocket extends Socket {
   userId?: string
   user?: any
+  accessToken?: string
 }
 
 interface UserLocation {
@@ -33,7 +36,9 @@ interface UserSession {
 }
 
 export class WebSocketServer {
+  private unsubscribeEvents?: () => void
   private io: SocketIOServer
+  private cleanupTimer?: ReturnType<typeof setInterval>
   private userSessions: Map<string, UserSession> = new Map()
   private userLocations: Map<string, UserLocation> = new Map()
   private hackathonRooms: Map<string, Set<string>> = new Map()
@@ -42,7 +47,7 @@ export class WebSocketServer {
   constructor(httpServer: HttpServer) {
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: "*",
+        origin: corsOptions.origin,
         methods: ["GET", "POST"]
       },
       transports: ['websocket', 'polling']
@@ -65,7 +70,8 @@ export class WebSocketServer {
           return next(new Error('Authentication token required'))
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any
+        const decoded = await verifyAccessToken(token)
+        socket.accessToken = token
         socket.userId = decoded.userId
         socket.user = decoded
 
@@ -82,6 +88,27 @@ export class WebSocketServer {
     this.io.on('connection', (socket: AuthenticatedSocket) => {
       console.log(`[WebSocket] User ${socket.userId} connected with socket ${socket.id}`)
 
+      // Recheck authorization for every incoming packet, including already-open sockets.
+      socket.use(async ([event, data], next) => {
+        try {
+          await verifyAccessToken(socket.accessToken!)
+          if (['join-team','typing-start','typing-stop'].includes(event) && (typeof data !== 'string' || !await checkTeamMembership(socket.userId!, data))) throw new Error('Forbidden')
+          if (event === 'join-hackathon' && (typeof data !== 'string' || !await checkHackathonAccess(socket.userId!, data))) throw new Error('Forbidden')
+          if (event === 'send-message' && (!data || typeof data.message !== 'string' || data.message.length > 4000 ||
+              typeof data.teamId !== 'string' || !await checkTeamMembership(socket.userId!, data.teamId))) throw new Error('Forbidden')
+          if (event === 'location-update' && (!data || typeof data.hackathonId !== 'string' ||
+              !await checkHackathonAccess(socket.userId!, data.hackathonId) ||
+              !Number.isFinite(data.location?.latitude) || Math.abs(data.location.latitude)>90 ||
+              !Number.isFinite(data.location?.longitude) || Math.abs(data.location.longitude)>180)) throw new Error('Forbidden')
+          if (event === 'status-change' && !['online','away','busy'].includes(data)) throw new Error('Invalid status')
+          next()
+        } catch {
+          socket.emit('authorization-error', { message: 'Not authorized' })
+          next(new Error('Not authorized'))
+        }
+      })
+      socket.on('error', () => {}) // Packet rejection is reported without exposing internal errors.
+
       // Create user session
       const session: UserSession = {
         userId: socket.userId!,
@@ -94,6 +121,7 @@ export class WebSocketServer {
 
       // Join user-specific room
       socket.join(`user:${socket.userId}`)
+      if (['admin','super_admin'].includes(socket.user.role)) socket.join('admins')
 
       // Send welcome message
       socket.emit('connected', {
@@ -127,7 +155,7 @@ export class WebSocketServer {
 
       // Handle typing indicators
       socket.on('typing-start', (teamId: string) => {
-        socket.to(`team:${teamId}`).emit('user-typing', {
+        void this.emitAuthorized(`team:${teamId}`, 'user-typing', {
           userId: socket.userId,
           teamId,
           typing: true
@@ -135,7 +163,7 @@ export class WebSocketServer {
       })
 
       socket.on('typing-stop', (teamId: string) => {
-        socket.to(`team:${teamId}`).emit('user-typing', {
+        void this.emitAuthorized(`team:${teamId}`, 'user-typing', {
           userId: socket.userId,
           teamId,
           typing: false
@@ -165,9 +193,24 @@ export class WebSocketServer {
     })
   }
 
+  private async emitAuthorized(room: string, event: string, data: unknown): Promise<void> {
+    for (const client of await this.io.in(room).fetchSockets()) {
+      const local = this.io.sockets.sockets.get(client.id) as AuthenticatedSocket | undefined
+      if (!local) continue
+      try {
+        const account = await verifyAccessToken(local.accessToken!)
+        const [kind, id] = room.split(':')
+        if (kind === 'team' && !await checkTeamMembership(account.userId, id)) throw new Error('Forbidden')
+        if (kind === 'hackathon' && !await checkHackathonAccess(account.userId, id)) throw new Error('Forbidden')
+        if (room === 'admins' && !['admin','super_admin'].includes(account.role)) throw new Error('Forbidden')
+        local.emit(event, data)
+      } catch { await local.leave(room) }
+    }
+  }
+
   private setupEventBusIntegration(): void {
     // Subscribe to all events and broadcast relevant ones
-    eventBus.subscribeToAll({
+    this.unsubscribeEvents = eventBus.subscribeToAll({
       handle: async (event: PlatformEvent) => {
         await this.handleEventBroadcast(event)
       }
@@ -183,20 +226,20 @@ export class WebSocketServer {
         case EventType.TEAM_UPDATED:
         case EventType.TEAM_DELETED:
           if (event.hackathonId) {
-            this.io.to(`hackathon:${event.hackathonId}`).emit('team-event', event)
+            await this.emitAuthorized(`hackathon:${event.hackathonId}`, 'team-event', event)
           }
           break
 
         case EventType.TEAM_MEMBER_ADDED:
         case EventType.TEAM_MEMBER_REMOVED:
           if (event.teamId) {
-            this.io.to(`team:${event.teamId}`).emit('team-member-event', event)
+            await this.emitAuthorized(`team:${event.teamId}`, 'team-member-event', event)
           }
           break
 
         case EventType.USER_LOCATION_UPDATED:
           if (event.hackathonId) {
-            this.io.to(`hackathon:${event.hackathonId}`).emit('location-update', event)
+            await this.emitAuthorized(`hackathon:${event.hackathonId}`, 'location-update', event)
           }
           break
 
@@ -204,7 +247,7 @@ export class WebSocketServer {
           if (event.userId) {
             const userSocket = this.getUserSocket(event.userId)
             if (userSocket) {
-              userSocket.emit('resume-parsed', event)
+              await this.emitAuthorized(`user:${event.userId}`, 'resume-parsed', event)
             }
           }
           break
@@ -213,7 +256,7 @@ export class WebSocketServer {
           if (event.userId) {
             const userSocket = this.getUserSocket(event.userId)
             if (userSocket) {
-              userSocket.emit('skill-match', event)
+              await this.emitAuthorized(`user:${event.userId}`, 'skill-match', event)
             }
           }
           break
@@ -221,15 +264,15 @@ export class WebSocketServer {
         case EventType.HACKATHON_STARTED:
         case EventType.HACKATHON_ENDED:
           if (event.hackathonId) {
-            this.io.to(`hackathon:${event.hackathonId}`).emit('hackathon-event', event)
+            await this.emitAuthorized(`hackathon:${event.hackathonId}`, 'hackathon-event', event)
           }
           break
 
         case EventType.NOTIFICATION_SENT:
-          if (event.data?.recipientId) {
+          if (typeof event.data?.recipientId === 'string') {
             const userSocket = this.getUserSocket(event.data.recipientId)
             if (userSocket) {
-              userSocket.emit('notification', event)
+              await this.emitAuthorized(`user:${event.data.recipientId}`, 'notification', event)
             }
           }
           break
@@ -237,7 +280,7 @@ export class WebSocketServer {
         case EventType.AGENT_TASK_COMPLETED:
         case EventType.AGENT_ERROR:
           // Broadcast agent events to admin users or relevant users
-          this.io.emit('agent-event', event)
+          await this.emitAuthorized('admins', 'agent-event', event)
           break
       }
     } catch (error) {
@@ -263,7 +306,7 @@ export class WebSocketServer {
     console.log(`[WebSocket] User ${socket.userId} joined hackathon ${hackathonId}`)
     
     // Notify others in the hackathon
-    socket.to(`hackathon:${hackathonId}`).emit('user-joined-hackathon', {
+    void this.emitAuthorized(`hackathon:${hackathonId}`, 'user-joined-hackathon', {
       userId: socket.userId,
       hackathonId,
       timestamp: new Date()
@@ -309,7 +352,7 @@ export class WebSocketServer {
     console.log(`[WebSocket] User ${socket.userId} joined team ${teamId}`)
     
     // Notify team members
-    socket.to(`team:${teamId}`).emit('user-joined-team', {
+    void this.emitAuthorized(`team:${teamId}`, 'user-joined-team', {
       userId: socket.userId,
       teamId,
       timestamp: new Date()
@@ -370,7 +413,7 @@ export class WebSocketServer {
 
       // Broadcast status change to relevant rooms
       if (session.hackathonId) {
-        socket.to(`hackathon:${session.hackathonId}`).emit('user-status-change', {
+        void this.emitAuthorized(`hackathon:${session.hackathonId}`, 'user-status-change', {
           userId: socket.userId,
           status,
           timestamp: new Date()
@@ -389,7 +432,7 @@ export class WebSocketServer {
     }
 
     // Broadcast to team members
-    this.io.to(`team:${data.teamId}`).emit('message', messageData)
+    void this.emitAuthorized(`team:${data.teamId}`, 'message', messageData)
 
     // Publish message event
     eventBus.publish({
@@ -444,7 +487,7 @@ export class WebSocketServer {
 
   private startCleanupInterval(): void {
     // Clean up inactive sessions every 5 minutes
-    setInterval(() => {
+    this.cleanupTimer = setInterval(() => {
       const now = new Date()
       const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000)
 
@@ -495,16 +538,16 @@ export class WebSocketServer {
   public sendNotificationToUser(userId: string, notification: any): void {
     const userSocket = this.getUserSocket(userId)
     if (userSocket) {
-      userSocket.emit('notification', notification)
+      void this.emitAuthorized(`user:${userId}`, 'notification', notification)
     }
   }
 
   public broadcastToHackathon(hackathonId: string, event: string, data: any): void {
-    this.io.to(`hackathon:${hackathonId}`).emit(event, data)
+    void this.emitAuthorized(`hackathon:${hackathonId}`, event, data)
   }
 
   public broadcastToTeam(teamId: string, event: string, data: any): void {
-    this.io.to(`team:${teamId}`).emit(event, data)
+    void this.emitAuthorized(`team:${teamId}`, event, data)
   }
 
   // Legacy methods for backward compatibility
@@ -521,11 +564,17 @@ export class WebSocketServer {
   }
 
   public broadcastToAll(event: string, data: any): void {
-    this.io.emit(event, data)
+    void this.emitAuthorized('admins', event, data)
   }
 
   public isUserConnected(userId: string): boolean {
     return this.userSessions.has(userId)
+  }
+
+  public close(): void {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer)
+    this.unsubscribeEvents?.()
+    this.io.close()
   }
 
   public getConnectedUserCount(): number {

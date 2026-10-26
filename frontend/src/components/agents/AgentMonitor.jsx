@@ -25,7 +25,7 @@ import {
 } from 'lucide-react'
 
 const AgentMonitor = () => {
-  const { user, API_BASE_URL, getAuthHeaders } = useAuth()
+  const { API_BASE_URL } = useAuth()
   const { toast } = useToast()
   
   const [agents, setAgents] = useState([])
@@ -211,7 +211,7 @@ const AgentMonitor = () => {
         title: `Agent ${action}`,
         description: `Successfully ${action}ed agent ${agentId}`,
       })
-    } catch (error) {
+    } catch {
       toast({
         title: 'Error',
         description: `Failed to ${action} agent`,

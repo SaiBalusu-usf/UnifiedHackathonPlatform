@@ -32,7 +32,7 @@ import {
 } from 'lucide-react'
 
 const TeamsPage = () => {
-  const { user, API_BASE_URL, getAuthHeaders } = useAuth()
+  const { API_BASE_URL } = useAuth()
   const { toast } = useToast()
   const [activeTab, setActiveTab] = useState('teams')
   const [currentIndex, setCurrentIndex] = useState(0)

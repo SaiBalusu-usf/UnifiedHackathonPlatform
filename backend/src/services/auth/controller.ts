@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID as uuidv4 } from 'node:crypto'
 import { 
   generateTokens,
   verifyRefreshToken,
@@ -23,41 +23,7 @@ import { Role } from '../../shared/middleware/rbac'
 import { eventBus, EventType } from '../../shared/events/eventBus'
 import { createUserEvent } from '../../shared/events/eventBus'
 
-// Mock user database (in production, use PostgreSQL)
-interface User {
-  id: string
-  email: string
-  username: string
-  firstName: string
-  lastName: string
-  password: string
-  role: Role
-  isEmailVerified: boolean
-  twoFactorEnabled: boolean
-  twoFactorSecret?: string
-  tokenVersion: number
-  createdAt: Date
-  updatedAt: Date
-  lastLoginAt?: Date
-  oauthProviders: {
-    google?: { id: string; email: string }
-    github?: { id: string; username: string }
-    linkedin?: { id: string; name: string }
-  }
-}
-
-// Mock database
-const users: Map<string, User> = new Map()
-
-// Helper function to find user by email
-const findUserByEmail = (email: string): User | undefined => {
-  return Array.from(users.values()).find(user => user.email === email)
-}
-
-// Helper function to find user by username
-const findUserByUsername = (username: string): User | undefined => {
-  return Array.from(users.values()).find(user => user.username === username)
-}
+import { AuthUser as User, createUser, getUser, saveUser, revokeSessions, findUserByEmail, findUserByUsername } from './repository'
 
 // Register new user
 export const register = async (req: Request, res: Response) => {
@@ -65,7 +31,7 @@ export const register = async (req: Request, res: Response) => {
     const { email, password, firstName, lastName, username } = req.body
 
     // Check if user already exists
-    if (findUserByEmail(email)) {
+    if (await findUserByEmail(email)) {
       return res.status(400).json({
         success: false,
         error: 'User already exists',
@@ -73,7 +39,7 @@ export const register = async (req: Request, res: Response) => {
       })
     }
 
-    if (findUserByUsername(username)) {
+    if (await findUserByUsername(username)) {
       return res.status(400).json({
         success: false,
         error: 'Username taken',
@@ -102,10 +68,7 @@ export const register = async (req: Request, res: Response) => {
       oauthProviders: {}
     }
 
-    users.set(userId, user)
-
-    // Generate verification token
-    const verificationToken = generateVerificationToken(userId)
+    await createUser(user)
 
     // Publish user registered event
     await eventBus.publish(createUserEvent(
@@ -115,8 +78,7 @@ export const register = async (req: Request, res: Response) => {
         email,
         firstName,
         lastName,
-        username,
-        verificationToken
+        username
       }
     ))
 
@@ -130,7 +92,7 @@ export const register = async (req: Request, res: Response) => {
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully. Please check your email for verification.',
+      message: 'User registered successfully. Email verification delivery is not configured.',
       data: {
         user: {
           id: user.id,
@@ -163,7 +125,7 @@ export const login = async (req: Request, res: Response) => {
     const { email, password } = req.body
 
     // Find user
-    const user = findUserByEmail(email)
+    const user = await findUserByEmail(email)
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -182,9 +144,12 @@ export const login = async (req: Request, res: Response) => {
       })
     }
 
+    if (user.twoFactorEnabled) return res.status(503).json({ success: false, message: 'Second-factor verification is not configured' })
+
     // Update last login
     user.lastLoginAt = new Date()
     user.updatedAt = new Date()
+    await saveUser(user)
 
     // Generate tokens
     const { accessToken, refreshToken } = generateTokens({
@@ -241,10 +206,9 @@ export const logout = async (req: AuthenticatedRequest, res: Response) => {
 
     if (userId) {
       // Increment token version to invalidate all existing tokens
-      const user = users.get(userId)
+      const user = await getUser(userId)
       if (user) {
-        user.tokenVersion += 1
-        user.updatedAt = new Date()
+        await revokeSessions(userId)
 
         // Publish logout event
         await eventBus.publish(createUserEvent(
@@ -286,7 +250,7 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     // Verify refresh token
     const decoded = await verifyRefreshToken(refreshToken)
-    const user = users.get(decoded.userId)
+    const user = await getUser(decoded.userId)
 
     if (!user || user.tokenVersion !== decoded.tokenVersion) {
       return res.status(401).json({
@@ -338,7 +302,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
       })
     }
 
-    const user = users.get(decoded.userId)
+    const user = await getUser(decoded.userId)
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -350,6 +314,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
     // Mark email as verified
     user.isEmailVerified = true
     user.updatedAt = new Date()
+    await saveUser(user)
 
     res.json({
       success: true,
@@ -366,36 +331,9 @@ export const verifyEmail = async (req: Request, res: Response) => {
 }
 
 // Request password reset
-export const requestPasswordReset = async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body
-
-    const user = findUserByEmail(email)
-    if (!user) {
-      // Don't reveal if email exists
-      return res.json({
-        success: true,
-        message: 'If the email exists, a password reset link has been sent'
-      })
-    }
-
-    const resetToken = generatePasswordResetToken(user.id)
-
-    // In production, send email with reset link
-    console.log(`[Auth] Password reset token for ${email}: ${resetToken}`)
-
-    res.json({
-      success: true,
-      message: 'If the email exists, a password reset link has been sent'
-    })
-  } catch (error) {
-    console.error('[Auth] Password reset request failed:', error)
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-      message: 'Password reset request failed'
-    })
-  }
+export const requestPasswordReset = async (_req: Request, res: Response) => {
+  // No mail delivery is implemented. Do not log credentials or claim mail was sent.
+  return res.status(503).json({ success: false, message: 'Password reset delivery is not configured' })
 }
 
 // Reset password
@@ -412,7 +350,7 @@ export const resetPassword = async (req: Request, res: Response) => {
       })
     }
 
-    const user = users.get(decoded.userId)
+    const user = await getUser(decoded.userId)
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -421,11 +359,15 @@ export const resetPassword = async (req: Request, res: Response) => {
       })
     }
 
+    if (decoded.tokenVersion !== user.tokenVersion) return res.status(400).json({ success: false, message: 'Reset token has already been used or revoked' })
+
     // Hash new password
     const hashedPassword = await hashPassword(newPassword)
     user.password = hashedPassword
+    const previousVersion = user.tokenVersion
     user.tokenVersion += 1 // Invalidate all existing tokens
     user.updatedAt = new Date()
+    await saveUser(user, previousVersion)
 
     res.json({
       success: true,
@@ -445,7 +387,7 @@ export const resetPassword = async (req: Request, res: Response) => {
 export const getProfile = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.userId
-    const user = users.get(userId!)
+    const user = await getUser(userId!)
 
     if (!user) {
       return res.status(404).json({
@@ -487,7 +429,7 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response) => {
 export const updateProfile = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.userId
-    const user = users.get(userId!)
+    const user = await getUser(userId!)
 
     if (!user) {
       return res.status(404).json({
@@ -501,7 +443,7 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response) =>
 
     // Check if username is taken by another user
     if (username && username !== user.username) {
-      const existingUser = findUserByUsername(username)
+      const existingUser = await findUserByUsername(username)
       if (existingUser && existingUser.id !== userId) {
         return res.status(400).json({
           success: false,
@@ -516,6 +458,7 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response) =>
     if (lastName !== undefined) user.lastName = lastName
     if (username !== undefined) user.username = username
     user.updatedAt = new Date()
+    await saveUser(user)
 
     // Publish profile updated event
     await eventBus.publish(createUserEvent(
@@ -557,7 +500,7 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response) =
   try {
     const userId = req.user?.userId
     const { currentPassword, newPassword } = req.body
-    const user = users.get(userId!)
+    const user = await getUser(userId!)
 
     if (!user) {
       return res.status(404).json({
@@ -580,8 +523,10 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response) =
     // Hash new password
     const hashedPassword = await hashPassword(newPassword)
     user.password = hashedPassword
+    const previousVersion = user.tokenVersion
     user.tokenVersion += 1 // Invalidate all existing tokens
     user.updatedAt = new Date()
+    await saveUser(user, previousVersion)
 
     res.json({
       success: true,
@@ -599,15 +544,15 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response) =
 
 // Placeholder implementations for 2FA and OAuth
 export const enable2FA = async (req: AuthenticatedRequest, res: Response) => {
-  res.json({ success: true, message: '2FA feature coming soon' })
+  res.status(501).json({ success: false, message: 'Two-factor enrollment is not implemented; no settings changed' })
 }
 
 export const disable2FA = async (req: AuthenticatedRequest, res: Response) => {
-  res.json({ success: true, message: '2FA feature coming soon' })
+  res.status(501).json({ success: false, message: 'Two-factor enrollment is not implemented; no settings changed' })
 }
 
 export const verify2FA = async (req: AuthenticatedRequest, res: Response) => {
-  res.json({ success: true, message: '2FA feature coming soon' })
+  res.status(501).json({ success: false, message: 'Two-factor enrollment is not implemented; no settings changed' })
 }
 
 export const googleAuth = async (req: Request, res: Response) => {
@@ -616,7 +561,7 @@ export const googleAuth = async (req: Request, res: Response) => {
 }
 
 export const googleCallback = async (req: Request, res: Response) => {
-  res.json({ success: true, message: 'Google OAuth callback - implementation in progress' })
+  res.status(501).json({ success: false, message: 'Google OAuth sign-in is not configured' })
 }
 
 export const githubAuth = async (req: Request, res: Response) => {
@@ -625,7 +570,7 @@ export const githubAuth = async (req: Request, res: Response) => {
 }
 
 export const githubCallback = async (req: Request, res: Response) => {
-  res.json({ success: true, message: 'GitHub OAuth callback - implementation in progress' })
+  res.status(501).json({ success: false, message: 'GitHub OAuth sign-in is not configured' })
 }
 
 export const linkedinAuth = async (req: Request, res: Response) => {
@@ -634,6 +579,6 @@ export const linkedinAuth = async (req: Request, res: Response) => {
 }
 
 export const linkedinCallback = async (req: Request, res: Response) => {
-  res.json({ success: true, message: 'LinkedIn OAuth callback - implementation in progress' })
+  res.status(501).json({ success: false, message: 'LinkedIn OAuth sign-in is not configured' })
 }
 

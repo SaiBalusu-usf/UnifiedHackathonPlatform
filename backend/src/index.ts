@@ -1,14 +1,18 @@
+import { configuredPort } from './shared/utils/runtimeConfig';
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { connectPostgreSQL, connectMongoDB, closeConnections } from './config/database';
+import { connectPostgreSQL, connectMongoDB, closeConnections, pgPool } from './config/database';
 import WebSocketServer from './shared/events/websocket';
 import { eventBus } from './shared/events/eventBus';
 import { agentManager } from './agents/AgentManager';
 
 // Import service routes
+import authRoutes from './services/auth/routes';
+import { authenticateToken, authorizeRoles } from './shared/middleware/auth';
+import { mongoSanitizeConfig, hppProtection, apiRateLimit, corsOptions } from './shared/middleware/security';
 import userRoutes from './services/user-management/routes';
 import teamRoutes from './services/team-formation/routes';
 import resumeRoutes from './services/resume-analysis/routes';
@@ -16,18 +20,15 @@ import trackingRoutes from './services/tracking/routes';
 
 const app = express();
 const server = http.createServer(app);
-const PORT = process.env.PORT || 3000;
+const PORT = configuredPort("PORT", 3000);
 
 // Initialize WebSocket server
 const wsServer = new WebSocketServer(server);
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: '*', // Allow all origins for development
-  credentials: true
-}));
-app.use(morgan('combined'));
+app.use(cors(corsOptions));
+app.use(morgan(':method :status :res[content-length] - :response-time ms'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -44,7 +45,18 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.use(mongoSanitizeConfig, hppProtection);
+app.use('/api', apiRateLimit);
+app.use('/api/auth', authRoutes);
+app.use(['/api/agents', '/api/events', '/api/websocket'], authenticateToken, authorizeRoles('admin', 'super_admin'));
+
 // API Routes - Gateway pattern
+app.get('/api/hackathons', authenticateToken, async (_req, res, next) => {
+  try {
+    const result = await pgPool.query('SELECT hackathon_id, name, description, start_date, end_date FROM hackathons ORDER BY start_date DESC LIMIT 100');
+    res.json({ success: true, data: result.rows });
+  } catch (error) { next(error); }
+});
 app.use('/api/users', userRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/resumes', resumeRoutes);
@@ -133,7 +145,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 });
 
 // 404 handler
-app.use('*', (req, res) => {
+app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: 'Route not found'
@@ -236,5 +248,5 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-startServer();
+if (require.main === module) void startServer();
 

@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { UserController } from './controller';
 import { authenticateToken, authorizeRoles } from '../../shared/middleware/auth';
+import { authRateLimit } from '../../shared/middleware/security';
 import { validateRequired, validateEmailField, validatePasswordField } from '../../shared/utils/validation';
 
 const router = Router();
 const userController = new UserController();
 
 // Public routes
-router.post('/register', 
+router.post('/register',
+  authRateLimit,
   validateRequired(['username', 'email', 'password', 'first_name', 'last_name']),
   validateEmailField,
   validatePasswordField,
@@ -15,6 +17,7 @@ router.post('/register',
 );
 
 router.post('/login',
+  authRateLimit,
   validateRequired(['email', 'password']),
   validateEmailField,
   userController.login
@@ -38,7 +41,7 @@ router.get('/:userId',
 
 router.put('/:userId',
   authenticateToken,
-  authorizeRoles('admin', 'organizer'),
+  authorizeRoles('admin'),
   userController.updateUser
 );
 
