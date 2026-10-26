@@ -6,8 +6,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyPasswordResetToken = exports.generatePasswordResetToken = exports.verifyEmailToken = exports.generateVerificationToken = exports.getGitHubUserInfo = exports.getGoogleUserInfo = exports.exchangeGitHubCode = exports.exchangeGoogleCode = exports.getLinkedInAuthUrl = exports.getGitHubAuthUrl = exports.getGoogleAuthUrl = exports.verifyOAuthState = exports.generateOAuthState = exports.verifyRefreshToken = exports.authorizeRoles = exports.optionalAuth = exports.authenticateToken = exports.comparePassword = exports.hashPassword = exports.generateTokens = exports.oauthProviders = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key';
+function requiredSigningKey(name) {
+  const value = process.env[name];
+  if (!value || value.trim().length < 32 || /^(your-|change[-_]?me|replace[-_]?me)/i.test(value)) {
+    throw new Error(name + ' must be configured with a non-placeholder secret of at least 32 characters');
+  }
+  return value;
+}
+const JWT_SECRET = requiredSigningKey('JWT_SECRET');
+const JWT_REFRESH_SECRET = requiredSigningKey('JWT_REFRESH_SECRET');
+if (JWT_SECRET === JWT_REFRESH_SECRET) {
+  throw new Error('JWT_SECRET and JWT_REFRESH_SECRET must be different');
+}
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '15m';
 const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 // OAuth provider configurations
