@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { motion, useMotionValue, useTransform, useAnimation } from 'framer-motion'
+import { motion as Motion, useMotionValue, useTransform, useAnimation } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 
 const SwipeCard = ({ 
@@ -154,7 +154,7 @@ const SwipeCard = ({
   }, [])
 
   return (
-    <motion.div
+    <Motion.div
       ref={cardRef}
       className={`relative select-none ${className}`}
       style={{ x, y, rotate, opacity, scale }}
@@ -174,7 +174,7 @@ const SwipeCard = ({
         {!disabled && (
           <>
             {/* Left swipe (reject) overlay */}
-            <motion.div
+            <Motion.div
               className="absolute inset-0 bg-red-500/20 flex items-center justify-center"
               style={{ opacity: leftOverlayOpacity }}
               initial={{ opacity: 0 }}
@@ -182,10 +182,10 @@ const SwipeCard = ({
               <div className="bg-red-500 text-white px-4 py-2 rounded-full font-bold text-lg transform -rotate-12">
                 PASS
               </div>
-            </motion.div>
+            </Motion.div>
 
             {/* Right swipe (like) overlay */}
-            <motion.div
+            <Motion.div
               className="absolute inset-0 bg-green-500/20 flex items-center justify-center"
               style={{ opacity: rightOverlayOpacity }}
               initial={{ opacity: 0 }}
@@ -193,10 +193,10 @@ const SwipeCard = ({
               <div className="bg-green-500 text-white px-4 py-2 rounded-full font-bold text-lg transform rotate-12">
                 MATCH
               </div>
-            </motion.div>
+            </Motion.div>
 
             {/* Up swipe (super like) overlay */}
-            <motion.div
+            <Motion.div
               className="absolute inset-0 bg-blue-500/20 flex items-center justify-center"
               style={{ opacity: upOverlayOpacity }}
               initial={{ opacity: 0 }}
@@ -204,14 +204,14 @@ const SwipeCard = ({
               <div className="bg-blue-500 text-white px-4 py-2 rounded-full font-bold text-lg">
                 SUPER MATCH
               </div>
-            </motion.div>
+            </Motion.div>
           </>
         )}
       </Card>
 
       {/* Drag direction indicator */}
       {isDragging && dragDirection && (
-        <motion.div
+        <Motion.div
           className="absolute -top-8 left-1/2 transform -translate-x-1/2"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -228,9 +228,9 @@ const SwipeCard = ({
              dragDirection === 'up' ? '↑ Super Match' :
              '↓ Info'}
           </div>
-        </motion.div>
+        </Motion.div>
       )}
-    </motion.div>
+    </Motion.div>
   )
 }
 

@@ -86,7 +86,6 @@ export interface Education {
 }
 
 export interface Resume {
-  _id?: string;
   user_id: string;
   original_resume?: string; // URL or binary data reference
   parsed_resume: ParsedResume;
@@ -95,7 +94,6 @@ export interface Resume {
 }
 
 export interface TrackingLog {
-  _id?: string;
   user_id: string;
   hackathon_id: string;
   session_id: string;
@@ -127,7 +125,8 @@ export interface TeamSuggestion {
   teamName?: string;
   membersCount?: number;
   matchingScore: number;
-  suggestedUsers?: User[];
+  suggestedUsers?: (Pick<User, 'user_id' | 'username' | 'first_name' | 'last_name'> &
+    Pick<Profile, 'skills' | 'interests'>)[];
 }
 
 export interface Event {
@@ -141,7 +140,12 @@ export interface JwtPayload {
   userId: string;
   email: string;
   role: string;
+  tokenVersion?: number;
+  type?: string;
+  permissions?: string[];
   iat?: number;
   exp?: number;
 }
 
+
+export type { AuthenticatedRequest } from '../middleware/auth';

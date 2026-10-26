@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { useAuth } from '@/contexts/AuthContext'
 import { useWebSocket } from '@/contexts/WebSocketContext'
 import { useToast } from '@/hooks/use-toast'
 import { 
@@ -19,7 +18,6 @@ import {
 } from 'lucide-react'
 
 const LocationTracker = ({ hackathonId }) => {
-  const { user } = useAuth()
   const { updateLocation, connected } = useWebSocket()
   const { toast } = useToast()
   
@@ -155,7 +153,7 @@ const LocationTracker = ({ hackathonId }) => {
     })
   }
 
-  const fetchNearbyUsers = async (currentLocation) => {
+  const fetchNearbyUsers = async () => {
     if (!settings.showNearbyUsers) return
 
     try {

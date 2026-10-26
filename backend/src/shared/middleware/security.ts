@@ -1,7 +1,6 @@
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import { body, validationResult, ValidationChain } from 'express-validator'
-import mongoSanitize from 'express-mongo-sanitize'
 import { Request, Response, NextFunction } from 'express'
 
 // Rate limiting configurations
@@ -80,7 +79,7 @@ export const userValidation = {
       .normalizeEmail()
       .withMessage('Please provide a valid email address'),
     body('password')
-      .isLength({ min: 8 })
+      .isLength({ min: 8, max: 72 })
       .withMessage('Password must be at least 8 characters long')
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
       .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
@@ -223,9 +222,9 @@ export const handleValidationErrors = (req: Request, res: Response, next: NextFu
   
   if (!errors.isEmpty()) {
     const formattedErrors = errors.array().map(error => ({
-      field: error.param,
+      field: error.type === 'field' ? error.path : undefined,
       message: error.msg,
-      value: error.value
+      // Do not echo passwords, tokens, or other submitted values in errors.
     }))
     
     return res.status(400).json({
@@ -238,80 +237,30 @@ export const handleValidationErrors = (req: Request, res: Response, next: NextFu
   next()
 }
 
-// MongoDB injection protection
-export const mongoSanitizeConfig = mongoSanitize({
-  replaceWith: '_',
-  onSanitize: ({ req, key }) => {
-    console.warn(`[Security] Potential NoSQL injection attempt detected: ${key}`)
-  }
-})
-
-// XSS protection middleware (custom implementation since xss-clean is deprecated)
-export const xssProtection = (req: Request, res: Response, next: NextFunction) => {
-  const sanitizeValue = (value: any): any => {
-    if (typeof value === 'string') {
-      // Remove potentially dangerous HTML tags and attributes
-      return value
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-        .replace(/javascript:/gi, '')
-        .replace(/on\w+\s*=/gi, '')
-        .replace(/<\s*\w.*?>/gi, '')
-    } else if (typeof value === 'object' && value !== null) {
-      if (Array.isArray(value)) {
-        return value.map(sanitizeValue)
-      } else {
-        const sanitized: any = {}
-        for (const key in value) {
-          sanitized[key] = sanitizeValue(value[key])
-        }
-        return sanitized
-      }
-    }
-    return value
-  }
-
-  // Sanitize request body
-  if (req.body) {
-    req.body = sanitizeValue(req.body)
-  }
-
-  // Sanitize query parameters
-  if (req.query) {
-    req.query = sanitizeValue(req.query)
-  }
-
-  // Sanitize URL parameters
-  if (req.params) {
-    req.params = sanitizeValue(req.params)
-  }
-
+// Reject ambiguous or operator-bearing input instead of mutating Express 5's
+// read-only query getter. Work is bounded and passwords are never rewritten.
+function validStructure(value: unknown, depth = 0, budget = { remaining: 10000 }): boolean {
+  if (--budget.remaining < 0 || depth > 20) return false
+  if (value === null || typeof value !== 'object') return true
+  return Object.entries(value).every(([key, entry]) =>
+    !key.startsWith('$') && !key.includes('.') &&
+    !['__proto__', 'prototype', 'constructor'].includes(key) &&
+    validStructure(entry, depth + 1, budget))
+}
+export const mongoSanitizeConfig = (req: Request, res: Response, next: NextFunction) => {
+  if (![req.body, req.query, req.params].every(value => validStructure(value)))
+    return res.status(400).json({ error: 'Invalid input structure' })
   next()
 }
 
-// HTTP Parameter Pollution protection
+// API strings remain data. React/text rendering must escape output; rewriting
+// request strings cannot provide contextual XSS protection and corrupts passwords.
+export const xssProtection = mongoSanitizeConfig
+
 export const hppProtection = (req: Request, res: Response, next: NextFunction) => {
-  // Whitelist of parameters that can have multiple values
-  const whitelist = ['skills', 'tags', 'categories']
-  
-  const sanitizeParams = (params: any) => {
-    for (const key in params) {
-      if (Array.isArray(params[key]) && !whitelist.includes(key)) {
-        // Keep only the last value for non-whitelisted parameters
-        params[key] = params[key][params[key].length - 1]
-      }
-    }
-    return params
-  }
-
-  if (req.query) {
-    req.query = sanitizeParams(req.query)
-  }
-
-  if (req.body) {
-    req.body = sanitizeParams(req.body)
-  }
-
+  const whitelist = new Set(['skills', 'tags', 'categories'])
+  if (Object.entries(req.query).some(([key, value]) => Array.isArray(value) && !whitelist.has(key)))
+    return res.status(400).json({ error: 'Repeated query parameter' })
   next()
 }
 
@@ -428,10 +377,7 @@ export const securityLogger = (req: Request, res: Response, next: NextFunction) 
     console.warn(`[Security] Suspicious request detected:`, {
       ip: req.ip,
       method: req.method,
-      url: req.url,
-      userAgent: req.get('User-Agent'),
-      body: req.body,
-      query: req.query,
+      route: req.route?.path || '[unmatched]',
       timestamp: new Date().toISOString()
     })
   }
@@ -444,7 +390,7 @@ export const securityLogger = (req: Request, res: Response, next: NextFunction) 
       console.warn(`[Security] Slow request detected:`, {
         ip: req.ip,
         method: req.method,
-        url: req.url,
+        route: req.route?.path || '[unmatched]',
         duration,
         statusCode: res.statusCode
       })

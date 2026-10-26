@@ -1,3 +1,4 @@
+import { configuredPort } from '../../shared/utils/runtimeConfig';
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
@@ -40,7 +41,7 @@ app.use('/api/auth', authRoutes)
 app.use(errorHandler)
 
 // 404 handler
-app.use('*', (req, res) => {
+app.use((req, res) => {
   res.status(404).json({
     success: false,
     error: 'Not found',
@@ -48,9 +49,9 @@ app.use('*', (req, res) => {
   })
 })
 
-const PORT = process.env.AUTH_SERVICE_PORT || 3001
+const PORT = configuredPort("AUTH_SERVICE_PORT", 3001)
 
-httpServer.listen(PORT, '0.0.0.0', () => {
+if (require.main === module) httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`[Auth Service] Server running on port ${PORT}`)
   console.log(`[Auth Service] Health check: http://localhost:${PORT}/health`)
 })

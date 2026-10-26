@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document, HydratedDocument } from 'mongoose';
 import { TrackingLog } from '../../shared/types';
 
 // GeoJSON Point schema
@@ -39,9 +39,9 @@ TrackingLogSchema.index({ session_id: 1, timestamp: -1 });
 TrackingLogSchema.index({ location: '2dsphere' }); // Geospatial index
 TrackingLogSchema.index({ timestamp: -1 });
 
-export interface TrackingLogDocument extends TrackingLog, Document {}
+export type TrackingLogDocument = HydratedDocument<TrackingLog>
 
-export const TrackingLogModel = mongoose.model<TrackingLogDocument>('TrackingLog', TrackingLogSchema);
+export const TrackingLogModel = mongoose.model<TrackingLog>('TrackingLog', TrackingLogSchema);
 
 // Session schema for tracking active sessions
 const SessionSchema = new Schema({

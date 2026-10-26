@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, HydratedDocument } from 'mongoose';
 import { Resume, ParsedResume, Experience, Education } from '../../shared/types';
 
 // Experience schema
@@ -40,11 +40,10 @@ ResumeSchema.pre('save', function(next) {
 });
 
 // Create indexes
-ResumeSchema.index({ user_id: 1 });
 ResumeSchema.index({ 'parsed_resume.skills': 1 });
 ResumeSchema.index({ created_at: -1 });
 
-export interface ResumeDocument extends Resume, Document {}
+export type ResumeDocument = HydratedDocument<Resume>
 
-export const ResumeModel = mongoose.model<ResumeDocument>('Resume', ResumeSchema);
+export const ResumeModel = mongoose.model<Resume>('Resume', ResumeSchema);
 

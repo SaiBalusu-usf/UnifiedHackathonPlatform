@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for HackMatch Backend Services
 
 # Development stage
-FROM node:18-alpine AS development
+FROM node:24-alpine AS development
 
 # Set working directory
 WORKDIR /app
@@ -18,7 +18,7 @@ RUN apk add --no-cache \
 COPY package*.json ./
 
 # Install dependencies (including dev dependencies)
-RUN npm install
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -33,7 +33,7 @@ EXPOSE 3000 3001 3002 3003 3004 3005
 CMD ["npm", "run", "dev"]
 
 # Build stage
-FROM node:18-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -47,7 +47,7 @@ RUN apk add --no-cache \
 COPY package*.json ./
 
 # Install all dependencies
-RUN npm install --legacy-peer-deps
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -56,10 +56,10 @@ COPY . .
 RUN npm run build
 
 # Remove dev dependencies
-RUN npm install --legacy-peer-deps --only=production && npm cache clean --force
+RUN npm prune --omit=dev --ignore-scripts
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:24-alpine AS production
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \

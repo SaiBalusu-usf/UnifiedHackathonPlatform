@@ -8,9 +8,16 @@ const { stripTypeScriptTypes } = require('node:module');
 function load(kind, env) {
   const calls = [];
   const jwt = { sign: (payload, secret, options) => { calls.push({ secret, options }); return 'synthetic-token'; } };
-  const context = { process: { env }, console, URLSearchParams, jwt, bcrypt: {}, exports: {}, require: name => {
+  const runtime = { process: { env }, exports: {} };
+  const runtimePath = kind === 'source' ? '../src/shared/utils/runtimeConfig.ts' : '../dist/shared/utils/runtimeConfig.js';
+  let runtimeCode = fs.readFileSync(path.join(__dirname, runtimePath), 'utf8');
+  if (kind === 'source') runtimeCode = stripTypeScriptTypes(runtimeCode).replace(/^export /gm, '') + '\nglobalThis.exports = { configuredTokenLifetime };';
+  vm.runInNewContext(runtimeCode, runtime);
+  const context = { Buffer, configuredTokenLifetime: runtime.exports.configuredTokenLifetime, process: { env }, console, URLSearchParams, jwt, bcrypt: {}, exports: {}, require: name => {
     if (name === 'jsonwebtoken') return jwt;
     if (name === 'bcryptjs') return {};
+    if (name === '../utils/runtimeConfig') return runtime.exports;
+    if (name === '../../services/auth/repository') return { getUser: async () => { throw new Error('Unexpected database access during signing configuration test'); } };
     throw new Error(`Unexpected dependency ${name}`);
   } };
   let code = fs.readFileSync(path.join(__dirname, kind === 'source' ? '../src/shared/middleware/auth.ts' : '../dist/shared/middleware/auth.js'), 'utf8');

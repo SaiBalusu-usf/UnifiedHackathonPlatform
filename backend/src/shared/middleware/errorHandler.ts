@@ -1,10 +1,9 @@
 import { Request, Response, NextFunction } from 'express'
-import { ValidationError } from 'express-validator'
 
 export interface AppError extends Error {
   statusCode?: number
   isOperational?: boolean
-  code?: string
+  code?: string | number
 }
 
 // Custom error classes

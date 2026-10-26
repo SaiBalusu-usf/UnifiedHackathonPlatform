@@ -1,5 +1,9 @@
 import { Request, Response, NextFunction } from 'express'
 import { AuthenticatedRequest } from '../types'
+import { pgPool } from '../../config/database'
+import { ResumeModel } from '../../services/resume-analysis/models'
+import { TrackingLogModel } from '../../services/tracking/models'
+import { isValidObjectId } from 'mongoose'
 
 // Define roles and permissions
 export enum Role {
@@ -277,30 +281,20 @@ async function checkResourceOwnership(
   }
 }
 
-// Helper functions for ownership checks
-async function checkTeamMembership(userId: string, teamId: string): Promise<boolean> {
-  // In a real implementation, this would query the database
-  // For now, we'll return true as a placeholder
-  console.log(`[RBAC] Checking team membership: user ${userId}, team ${teamId}`)
-  return true
+// Values are always query parameters; unknown resources and database errors deny access.
+export async function checkTeamMembership(userId: string, teamId: string): Promise<boolean> {
+  return (await getUserTeamRole(userId, teamId)) !== null
 }
-
-async function checkHackathonAccess(userId: string, hackathonId: string): Promise<boolean> {
-  // In a real implementation, this would check if user is registered or is an organizer
-  console.log(`[RBAC] Checking hackathon access: user ${userId}, hackathon ${hackathonId}`)
-  return true
+export async function checkHackathonAccess(userId: string, hackathonId: string): Promise<boolean> {
+  return (await getUserHackathonRole(userId, hackathonId)) !== null
 }
-
 async function checkResumeOwnership(userId: string, resumeId: string): Promise<boolean> {
-  // In a real implementation, this would query the resume database
-  console.log(`[RBAC] Checking resume ownership: user ${userId}, resume ${resumeId}`)
-  return true
+  if (!isValidObjectId(resumeId)) return false
+  return !!(await ResumeModel.exists({ _id: resumeId, user_id: userId }))
 }
-
 async function checkTrackingAccess(userId: string, trackingId: string): Promise<boolean> {
-  // In a real implementation, this would check if tracking belongs to user or their team
-  console.log(`[RBAC] Checking tracking access: user ${userId}, tracking ${trackingId}`)
-  return true
+  if (!isValidObjectId(trackingId)) return false
+  return !!(await TrackingLogModel.exists({ _id: trackingId, user_id: userId }))
 }
 
 // Team-specific permissions
@@ -315,7 +309,7 @@ export function requireTeamRole(teamRoles: string | string[]) {
       })
     }
 
-    const teamId = req.params.teamId || req.body.teamId
+    const teamId = req.params.teamId || req.body?.teamId
     if (!teamId) {
       return res.status(400).json({
         error: 'Bad request',
@@ -346,10 +340,10 @@ export function requireTeamRole(teamRoles: string | string[]) {
 }
 
 async function getUserTeamRole(userId: string, teamId: string): Promise<string | null> {
-  // In a real implementation, this would query the database
-  // For now, return 'member' as a placeholder
-  console.log(`[RBAC] Getting team role: user ${userId}, team ${teamId}`)
-  return 'member'
+  const result = await pgPool.query(`SELECT CASE WHEN t.created_by=$1 THEN 'leader' ELSE tm.role END AS role
+    FROM teams t LEFT JOIN team_members tm ON tm.team_id=t.team_id AND tm.user_id=$1
+    WHERE t.team_id=$2 AND (t.created_by=$1 OR tm.user_id=$1)`, [userId, teamId])
+  return result.rows[0]?.role ?? null
 }
 
 // Hackathon-specific permissions
@@ -364,7 +358,8 @@ export function requireHackathonRole(hackathonRoles: string | string[]) {
       })
     }
 
-    const hackathonId = req.params.hackathonId || req.body.hackathonId
+    if (req.user.role === Role.ADMIN || req.user.role === Role.SUPER_ADMIN) return next()
+    const hackathonId = req.params.hackathonId || req.body?.hackathonId
     if (!hackathonId) {
       return res.status(400).json({
         error: 'Bad request',
@@ -393,10 +388,13 @@ export function requireHackathonRole(hackathonRoles: string | string[]) {
   }
 }
 
-async function getUserHackathonRole(userId: string, hackathonId: string): Promise<string | null> {
-  // In a real implementation, this would query the database
-  console.log(`[RBAC] Getting hackathon role: user ${userId}, hackathon ${hackathonId}`)
-  return 'participant'
+export async function getUserHackathonRole(userId: string, hackathonId: string): Promise<string | null> {
+  const owner = await pgPool.query('SELECT created_by FROM hackathons WHERE hackathon_id=$1', [hackathonId])
+  if (!owner.rows.length) return null
+  if (owner.rows[0].created_by === userId) return 'organizer'
+  const membership = await pgPool.query(`SELECT tm.user_id FROM team_members tm
+    JOIN teams t ON t.team_id=tm.team_id WHERE t.hackathon_id=$1 AND tm.user_id=$2`, [hackathonId, userId])
+  return membership.rows.length ? 'participant' : null
 }
 
 // Utility function to check if user has permission
@@ -431,3 +429,12 @@ export default {
   addUserPermissions
 }
 
+
+// An organizer may inspect a resume only for a participant in a hackathon they own.
+export async function canManageParticipant(organizerId: string, participantId: string): Promise<boolean> {
+  const result = await pgPool.query(`SELECT t.team_id FROM teams t
+    JOIN hackathons h ON h.hackathon_id=t.hackathon_id
+    LEFT JOIN team_members tm ON tm.team_id=t.team_id AND tm.user_id=$2
+    WHERE h.created_by=$1 AND (t.created_by=$2 OR tm.user_id=$2) LIMIT 1`, [organizerId, participantId])
+  return result.rows.length > 0
+}

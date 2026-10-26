@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
   // Check for existing token on app load
   useEffect(() => {
@@ -136,7 +136,16 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
-  const logout = () => {
+  const logout = async () => {
+    const token = localStorage.getItem('token')
+    try {
+      if (token) {
+        const response = await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+        if (!response.ok) throw new Error('Server session revocation failed')
+      }
+    } catch {
+      toast({ title: 'Session revocation failed', description: 'Local sign-out completed, but the server session may remain valid until expiry.', variant: 'destructive' })
+    }
     localStorage.removeItem('token')
     setUser(null)
     toast({

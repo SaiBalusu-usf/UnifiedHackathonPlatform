@@ -3,12 +3,14 @@ import { ResumeModel } from './models';
 import { sendSuccess, sendError } from '../../shared/utils/response';
 import { validateUUID } from '../../shared/utils/validation';
 import { AuthenticatedRequest } from '../../shared/middleware/auth';
+import { canManageParticipant } from '../../shared/middleware/rbac';
 import { ParsedResume } from '../../shared/types';
 
 export class ResumeController {
   async uploadResume(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.body.userId || req.user?.userId;
+      const userId = req.user?.userId;
+      if (req.body.userId && req.body.userId !== userId) { sendError(res, 'Cannot upload another user\'s resume', undefined, 403); return; }
       const file = req.file;
 
       if (!file) {
@@ -16,7 +18,7 @@ export class ResumeController {
         return;
       }
 
-      if (!validateUUID(userId)) {
+      if (!userId || !validateUUID(userId)) {
         sendError(res, 'Invalid user ID format', undefined, 400);
         return;
       }
@@ -71,8 +73,9 @@ export class ResumeController {
         return;
       }
 
-      // Users can only access their own resume unless they're admin/organizer
-      if (userId !== requesterId && !['admin', 'organizer'].includes(req.user?.role || '')) {
+      // Organizer access is scoped to persisted participants, never the global role alone.
+      if (userId !== requesterId && req.user?.role !== 'admin' &&
+          !(req.user?.role === 'organizer' && requesterId && await canManageParticipant(requesterId, userId))) {
         sendError(res, 'Insufficient permissions', undefined, 403);
         return;
       }

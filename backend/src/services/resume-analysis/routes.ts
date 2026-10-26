@@ -11,7 +11,8 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 5 * 1024 * 1024,
+    files: 1, fields: 5, parts: 6, fieldSize: 2048,
   },
   fileFilter: (req, file, cb) => {
     // Allow PDF, DOC, DOCX files

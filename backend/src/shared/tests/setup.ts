@@ -73,6 +73,7 @@ const createTestTables = async (): Promise<void> => {
 
 export const cleanupTestData = async (): Promise<void> => {
   // Clean MongoDB collections
+  if (!mongoose.connection.db) throw new Error('Test database is not connected');
   const collections = await mongoose.connection.db.collections();
   for (const collection of collections) {
     await collection.deleteMany({});

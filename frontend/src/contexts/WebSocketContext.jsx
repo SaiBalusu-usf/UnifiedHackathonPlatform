@@ -18,7 +18,7 @@ export const WebSocketProvider = ({ children }) => {
   const { toast } = useToast()
   const [socket, setSocket] = useState(null)
   const [connected, setConnected] = useState(false)
-  const [onlineUsers, setOnlineUsers] = useState([])
+  const [onlineUsers] = useState([])
   const reconnectAttempts = useRef(0)
   const maxReconnectAttempts = 5
 
@@ -79,21 +79,21 @@ export const WebSocketProvider = ({ children }) => {
     })
 
     // Team-related events
-    newSocket.on('team-created', (data) => {
+    newSocket.on('team-created', () => {
       toast({
         title: 'New Team Created',
         description: `A new team has been created in your hackathon.`,
       })
     })
 
-    newSocket.on('member-added', (data) => {
+    newSocket.on('member-added', () => {
       toast({
         title: 'Team Member Added',
         description: `A new member has joined your team.`,
       })
     })
 
-    newSocket.on('member-removed', (data) => {
+    newSocket.on('member-removed', () => {
       toast({
         title: 'Team Member Left',
         description: `A member has left your team.`,
@@ -114,7 +114,7 @@ export const WebSocketProvider = ({ children }) => {
     })
 
     // Resume events
-    newSocket.on('resume-parsed', (data) => {
+    newSocket.on('resume-parsed', () => {
       toast({
         title: 'Resume Processed',
         description: 'Your resume has been successfully analyzed by our AI system.',
@@ -130,14 +130,14 @@ export const WebSocketProvider = ({ children }) => {
     })
 
     // Hackathon events
-    newSocket.on('hackathon-started', (data) => {
+    newSocket.on('hackathon-started', () => {
       toast({
         title: 'Hackathon Started!',
         description: 'The hackathon has officially begun. Good luck!',
       })
     })
 
-    newSocket.on('hackathon-ended', (data) => {
+    newSocket.on('hackathon-ended', () => {
       toast({
         title: 'Hackathon Ended',
         description: 'The hackathon has concluded. Thanks for participating!',
